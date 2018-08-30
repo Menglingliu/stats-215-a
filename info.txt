@@ -1,4 +1,4 @@
-name = "Rebecca Barter"
-SID = "0123456789"
-email = "rebeccabarter@berkeley.edu"
-github_name = "rlbarter"
+name = "Mengling Liu"
+SID = "3033122406"
+email = "mengling_liu0223@berkeley.edu"
+github_name = "Menglingliu"
