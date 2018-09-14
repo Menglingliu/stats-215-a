@@ -1,0 +1,572 @@
+---
+title: "Lab 1 - Redwood Data, Stat 215A, Fall 2018"
+author: "Blind"
+date: "September 13, 2018"
+header-includes:
+   - \usepackage{float}
+output: 
+  pdf_document:
+    number_sections: true
+---
+
+```{r echo = FALSE, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(tidyverse)
+library(lubridate)
+library(viridis)
+
+setwd("C:/Users/fando/Box Sync/stat-215-a/lab 1")
+```
+
+
+```{r setup, echo = FALSE, message=FALSE, warning=FALSE, cache = TRUE}
+
+dat <- read.csv("data/sonoma-data-all.csv", header = TRUE)
+loc <- read.table('data/mote-location-data.txt', header = TRUE)
+
+
+# Date --------------------------------------------------------------------
+
+path <- "data/"
+# load the numbers data
+epoch_nums <- read.table(paste0(path, "sonoma-dates-epochNums.txt"), 
+                         col.names=NA,
+                         colClasses = "character")
+# remove the surplus rows
+epoch_nums <- epoch_nums[3:(nrow(epoch_nums) - 1), ]
+# manually input the first entry
+epoch_nums[1] <- "1"
+
+# load in the dates data
+epoch_dates <- read.table(paste0(path, "sonoma-dates-epochDates.txt"), 
+                          col.names=NA, 
+                          colClasses="character")
+# the first entry was read incorrectly. 
+# remove the surplus rows
+epoch_dates <- epoch_dates[7:(nrow(epoch_dates) - 1), ]
+# manually input the first entry
+epoch_dates[1] <- "Tue Apr 27 17:10:00 2004"
+
+# load in the days data
+epoch_days <- read.table(paste0(path, "sonoma-dates-epochDays.txt"), 
+                         col.names=NA,
+                         colClasses = "character")
+# the first entry was read incorrectly. 
+# remove the surplus rows
+epoch_days <- epoch_days[3:(nrow(epoch_days) - 1), ]
+# manually input the first entry
+epoch_days[1] <- "12536.0069444444"
+
+# combine all three variables into a data frame
+epoch_df <- data.frame(number = epoch_nums,
+                       date = epoch_dates,
+                       day = epoch_days)
+
+cleanDatesData <- function(date_df) {
+  # Arguments:
+  #   date_df: a data.frame in the format of the output of the 
+  #     loadDatesData() function
+  # Returns:
+  #   a data.frame similar to the input `dates` but with cleaned variables
+  #     (number, day, date, time, datetime)
+  
+  # convert the dates variable to lubridate format
+  date_df <- date_df %>% 
+    # separate date variable into two variables: time and date
+    # remove times
+    mutate(date_sep = gsub("\\w+:\\w+:\\w+ ", "", date), 
+           # remove day of the week
+           date_sep = gsub("(Mon|Tue|Wed|Thu|Fri|Sat|Sun)", "", date_sep),
+           # extract times
+           time_sep = str_extract(as.character(date), " \\w+:\\w+:\\w+"),
+           # combine date and time into single datetime variable
+           datetime = mdy_hms(paste(date_sep, time_sep)),
+           # convert day to a number
+           day = as.numeric(as.character(day))) %>%
+    # remove original date vairable and rename date_sep and time_sep
+    select(-date, date = date_sep, time = time_sep)
+  
+  return(date_df)
+}
+
+epoch_df <- cleanDatesData(epoch_df)
+epoch_df$number <- as.numeric(epoch_df$number)
+
+# Merge datasets ----------------------------------------------------------
+
+dat <- dat %>% 
+  inner_join(loc, by = c('nodeid' = 'ID')) %>% 
+  inner_join(epoch_df, by = c('epoch' = 'number')) %>% 
+  select(-result_time)
+
+dat <- dat[!duplicated(dat), ]
+
+vars <- c('humid_adj', 'humid_temp', 'hamatop', 'hamabot')
+
+# humid_adj ---------------------------------------------------------------
+# I. Negative Values
+neg.humid.node <- filter(dat, humid_adj < 0) %>% 
+  group_by(nodeid) %>% 
+  summarise(n=n())
+
+## node 29, 123, 141, 78, 198
+# node 29
+node29 <- filter(dat, nodeid == 29)
+# NA 1: drop humid_adj and humid_temp since all obs have same values
+
+# node 123
+node123 <- filter(dat, nodeid == 123)
+# Take a closer look and plot node 123 values against time
+# Plots of humidity and temperature show the same trend:
+# apparently something went wrong when epoch > 4900
+# Let's make those values null (NA 2)
+
+# node 141
+node141 <- filter(dat, nodeid == 141)
+# Take a closer look and plot node 141 values against time
+# Plots of humidity and temperature show the same trend:
+# apparently something went wrong when epoch > 8900
+# Let's make those values null (NA 3)
+
+# node 198
+node198 <- filter(dat, nodeid == 198)
+# Take a closer look and plot node 198 values against time
+# We found one outlier: all columns are out of normal range when epoch == 3472
+# Let's make the epoch == 3472 point null (NA 4)
+
+# node 78
+node78 <- filter(dat, nodeid == 78)
+# Take a closer look and plot node 78 values against time
+# humid_adj went wrong when epoch > 2800
+# temperature went wrong when epoch > 2950
+# Let's make those values null (NA 5)
+
+# Implement NA 1 - NA 5 and make all invalid points NAs
+dat <- dat %>%
+  mutate(humid_adj = if_else((nodeid == 29) | ((nodeid == 123) & (epoch > 4900)) |
+                               ((nodeid == 141) & (epoch > 8900)) | ((nodeid == 78) & (epoch > 2800))|
+                               ((nodeid == 198) & (epoch == 3472)),
+                             NA_real_, humid_adj),
+         humid_temp = if_else((nodeid == 29) | ((nodeid == 123) & (epoch > 4900)) |
+                                ((nodeid == 141) & (epoch > 8900)) | ((nodeid == 78) & (epoch > 2950)) |
+                                ((nodeid == 198) & (epoch == 3472)),
+                              NA_real_, humid_temp),
+         hamatop = if_else((nodeid == 29) | ((nodeid == 198) & (epoch == 3472)), NA_real_, hamatop),
+         hamabot = if_else((nodeid == 29) | ((nodeid == 198) & (epoch == 3472)), NA_real_, hamabot)) %>%
+  as.data.frame()
+
+# II. Values > 100
+large.humid.node <- filter(dat, humid_adj > 100) %>% 
+  group_by(nodeid) %>% 
+  summarise(n=n())
+
+## node 42, 145, 3, 118
+# node 42
+node42 <- filter(dat, nodeid == 42)
+# all values > 100 are only greater at 0.00 level, no need to change anything.
+
+# node 145
+node145 <- filter(dat, nodeid == 145)
+# Take a closer look and plot node 145 values against time
+# Plots of humidity and temperature show the same trend:
+# apparently something went wrong when epoch > 3150
+# Let's make those values null (NA 1)
+
+# node 3
+node3 <- filter(dat, nodeid == 3)
+# Take a closer look and plot node 3 values against time
+# humid_adj went wrong when epoch > 3750
+# temperature went wrong when epoch > 3700
+# Let's make those values null (NA 2)
+
+# node 118
+node118 <- filter(dat, nodeid == 118)
+# Take a closer look and plot node 118 values against time
+# humid_adj went wrong when epoch = 8717, 8718, 8719; let's make them null (NA 3)
+# other variables seem normal
+
+# Implement NA 1 - NA 3 and make all invalid points NAs
+dat <- dat %>%
+  mutate(humid_adj = if_else(((nodeid == 145) & (epoch > 3150)) |
+                               ((nodeid == 3) & (epoch > 3750)) |
+                               ((nodeid == 118) & (epoch %in% c(8717, 8718, 8719))),
+                             NA_real_, humid_adj),
+         humid_temp = if_else(((nodeid == 145) & (epoch > 3150)) |
+                                ((nodeid == 3) & (epoch > 3700)),
+                              NA_real_, humid_temp)) %>%
+  as.data.frame()
+
+
+# Temperature -------------------------------------------------------------
+
+
+# all seems normal
+
+
+# hamatop -----------------------------------------------------------------
+
+# ggplot(dat)+geom_point(aes(x=epoch, y=hamatop))
+# we can see a group of suspicious outliers when hamatop > 150000
+
+large.hamatop.node <- filter(dat, hamatop > 150000) %>% 
+  group_by(nodeid) %>% 
+  summarise(n=n())
+# print(large.hamatop.node[['nodeid']])
+
+# node 40
+node40 <- filter(dat, nodeid == 40)
+# humid_adj, humid_temp and hamabot seem normal, 
+# but hamatop has some strangely high values that do not 
+# go along with the general pattern, especially when epoch > 38
+# Let's make all the outliers null
+dat <- dat %>%
+  mutate(hamatop = if_else(((nodeid == 40) & (hamatop > 150000)),
+                           NA_real_, hamatop)) %>%
+  as.data.frame()
+
+
+# Voltage -----------------------------------------------------------------
+
+# hist(dat$voltage)
+# in log, voltage is within 2~3 range
+# in net, voltage is aroung 180 ~ 300 range
+# the small group of voltage > 1000 is very weird
+
+high.voltage.node <- filter(dat, voltage > 1000) %>% 
+  group_by(nodeid) %>% 
+  summarise(n=n())
+
+## node 134, 141, 145
+# node 134
+node134 <- filter(dat, nodeid == 134)
+# Albeit the outliers have strangely high voltage, their humidity, temp, hamatop
+# and hamabot seem normal. Let's just make the high voltage values null in this case.
+
+# node 141
+node141 <- filter(dat, nodeid == 141)
+# Albeit the outliers have strangely high voltage, their humidity, temp, hamatop
+# and hamabot seem normal. Let's just make the high voltage values null in this case.
+
+# node 145
+node145 <- filter(dat, nodeid == 145)
+# Albeit the outliers have strangely high voltage, their humidity, temp, hamatop
+# and hamabot seem normal. Let's just make the high voltage values null in this case.
+
+low.voltage.node <- filter(dat, voltage < 2) %>% 
+  group_by(nodeid) %>% 
+  summarise(n=n())
+
+dat <- dat %>%
+  mutate(voltage = if_else(((nodeid %in% c(134, 141, 145)) & (voltage > 1000)) |
+                             ((nodeid %in% c(29, 128, 134, 141, 142, 143, 145)) & (voltage < 2)),
+                           NA_real_, voltage)) %>%
+  as.data.frame()
+
+
+# One value per epoch-nodeid pair -----------------------------------------
+
+# we can use voltage to distinguish net and log values
+# in log, voltage is within 2~3 range
+# in net, voltage is aroung 200 ~ 300 range
+
+dat$id <- paste(dat$epoch, dat$nodeid, sep = '-')
+log <- filter(dat, voltage < 100)
+net <- filter(dat, voltage > 100)
+
+log <- filter(log, !(log$id %in% log[duplicated(log$id), 'id']))
+net <- filter(net, !(net$id %in% net[duplicated(net$id), 'id']))
+
+# adjust voltage in net so it is in the same scale as log
+voltage.net.log <- full_join(log, net, by = 'id', suffix = c('.log', '.net')) %>%
+  filter((voltage.log != 0) & (voltage.net != 0)) %>% 
+  select(voltage.log, voltage.net)
+fit.vol <- lm(voltage.log ~ voltage.net, data = voltage.net.log)
+# ggplot(voltage.net.log)+geom_point(aes(x=voltage.log, y=predict(fit.vol)))
+
+net$voltage_adj <- predict(fit.vol, data.frame(voltage.net = net$voltage))
+log$voltage_adj <- log$voltage
+
+dat.all <- data.frame(net)
+extra.log <- filter(log, !(log$id %in% net$id))
+
+dat.all <- rbind(dat.all, extra.log)
+
+# More Prep
+dat.all$hour <- format(strptime(dat.all$time,format = '%H:%M:%S'), "%H")
+
+```
+
+# Introduction
+
+This report analyzes the Redwoods dataset collected in 'A Macroscope in the Redwoods' project, which is a case study of a wireless sensor network that recorded 44 days in the life of a 70-meter tall redwood tree. Inspired by the original paper, this report presents a renovated way to clean, explore and analyze the dataset.
+
+# The Data
+
+## Data Collection
+
+Using two systems, the wireless sensor network TASK and the local data logging system, researchers recorded 44 days (April 27 2004 at 5:10 PM to June 10 2004 at 2 PM) of microclimate information of a 70-meter tall redwood tree, at a density of every 5 minutes in time and every 2 meters in space. A total of 72 nodes were deployed, which measured air temperature, relative humidity, incident photosynthetically active solar radiation (PAR) and reflected PAR. Readings from the TASK framework were taken every 5 minutes, while the local data logging system, as a backup of TASK, recorded every reading taken by every query until its 512 kB flash chip was full. Data from TASK and local logging system were named as 'net' and 'log' respectively. Because of the existence of missing values in certain time periods, we will use both datasets to re-generate the complete picture of the microclimatic dynamics around the tree.
+
+## Data Cleaning
+
+Data Cleaning is a two-part process. First, we use 'all', the simple binding of log and net, to perform variable checking, making sure all variabels of interest are in the right range, converting epoch and voltage to the right scale and removing outliers when necessary. Second, we separate out 'net' and 'log', and combine them together on a node-epoch basis. Additional pre-processing is then performed on the combined and cleaned dataset.
+
+### Variable Checking, by epoch and node
+
+The variables of interest are adjusted humidity(humid_adj), temperature(humid_temp), incident and reflected PAR(hamatop and hamabot). The general assumption of variable checking is that these measurements should be within their normal ranges (i.e., one obvious example, in early summer, North California's temperature should not be negative) and move smoothly over time.
+
++ Adjusted humidity: after plotting adjusted humidity over time(epoch), we notice two groups of values deviated from the common crowd: the negative ones and those > 100. For each of the two groups, we find the problematic nodes behind these values and investigate the nodes one by one. For example, all observations from node 29 have the same values, which is clearly a recording error. We thus drop node 29 values in its entirety. In other cases, nodes started to record wrong values after several epochs. For example, as the graph below shows, node 78's recording for adjusted humidity and temperature went wrong when epoch > 2800, 2950, respectively. In these cases, we identify the 'epoch' when values went wrong and set the outliers to NA. We repeat this process on node 123, 141, 198, 42, 145, 3, 118 to identify and remove all the outlier points.
+
+```{r echo = FALSE, fig.width=4, fig.height=3}
+ggplot(node78) + 
+  geom_point(aes(x=epoch, y=humid_adj)) + 
+  geom_vline(xintercept=2800, color = 'red') +
+  ggtitle('Adjusted Humidity by epoch, Node 78') +
+  theme(plot.title = element_text(color="black", size=14, hjust = 0.5))
+
+```
+
++ Temperature: while investigating on adjusted humidity, we find that usually when humidity went wrong, temperature values went wrong as well. So along side adjusted humidity outliers, we removed temperature outliers as well. After the variable checking of adjusted humidity is done, we plot temperature over time, and gladly see that all values are within normal range and the patterns seem normal. No more cleaning needed for temperature.
+
++ Incident PAR: after plotting incident PAR over time, we find a group of suspicious outliers when hamatop > 150000. All of them come from node 40. Further investigation shows that the values went wrong in node 40 when epoch > 38. We thus removed all the outliers in node 40.
+
++ Reflected PAR: the reflected PAR vs. epoch plot shows that, all values are within normal range with reasonable pattern. No more cleaning needed.
+
++ **Epoch Conversion**: code from clean.R and load.R is used to create epoch_df, a mapping table between epoch and the actual date time. We then merge epoch_df with our data to add exact date and time information for each recording. Datetime will be useful in later exploration.
+
++ **Voltage**: after checking the distribution of voltage, we find two suspicious group of values: > 1000 and < 2. Further investigation shows that they come from node 134, 141, 145, 128, 142, 143. Node by node checking shows that albeit their voltage values are strange, their humidity, temp, hamatop and hamabot seem normal. We thus decide to remove the abnormal voltage values and leave other values as they are. A more prominent problem with voltage is that, the voltage in net and log is not on the same scale. The ones in log are mainly between 2~3 while those in net are in the 200 ~ 300 range. A quick scatterplot shows that their relationship is linear. So we use linear regression to convert the net voltage to the same scale as log. As the plot below shows, though the model is very basic, it does a great job at **voltage conversion**.
+
+```{r echo = FALSE, fig.width=4, fig.height=3}
+ggplot(voltage.net.log)+
+  geom_point(aes(x=voltage.log, y=predict(fit.vol))) +
+  ylab('predicted voltage.net, on log\'s scale') +
+  ggtitle('Log Voltage vs. Predicted Net Voltage') +
+  theme(plot.title = element_text(color="black", size=12, hjust = 0.5))
+```
+
+### Dataset Combination and other Pre-Processing
+
+Next, using their differences in voltage (the original values instead of the converted ones), we separate the dataset into net and lot. Because the two systems differ in availability during the 44-day experiment, both of them have missing values for certain nodes in certain epochs. Using nodeid-epoch as the unique identifier, we join the two datasets, hoping to fill in as many missing slots as possible. In the case of overlapping, that is, both net and log have values for a given nodeid-epoch pair, we discover that the values are only different on a negligible level (i.e., < 0.1 level), we thus decide to use net as the value for this given pair, for the sole reason that the TASK framework was the core of the researchers' study so we have more faith in their recordings. Duplicates are also dropped in this process. 
+
+We then join the combined dataset with loc, to get the spatial information of node. At the very last step, we perform additional pre-processing, such as extracting 'hour' from time for later use. 
+
+
+## Data Exploration
+
+We start with the histogram of epoch, colored by height. From the plot, we can generally divide our data into three phases: 
+
++ Phase 1: epoch < 2500. From the very start to roughly epoch = 2500, we have a relatively large and stable amount of observations at each time period and height bin. As indicated by the color, most observations are in the 40 m ~ 50 m range, while 30 ~ 40, 50 ~ 60 and 60 ~ 70 come as close seconds, each has approximately 50 observations at each epoch. We have very few observations at the 10m ~ 20m range, the bottom part of the tree, as shown by the thin purple layer on the very top.
+
++ Phase 2: 2500 < epoch < 10000. The quantity suddenly drops by half, when epoch moves past 2500 (approximately). This is largely due to the plummet in 30 m ~ 40 m range, which almost disappears as epoch moves towards 4000. Apparently nodes located in this range ran into some problems. The 40 m ~ 50 m also drops by half, as does the 20 m ~ 30 m range. The higher levels, 50 m ~ 60 m and 60 m ~ 70 m, seem unaffected, as their number of observations remain largely stable.
+
++ Phase 3: epoch > 11000. The number of observations plummets, even hardly. Once we past epoch = 11000, observations in all height bin drop dramatically, the bottom levels disappear from the plot and only very thin layers of 40 m ~ 50 m, 50 m ~ 60 m, 60 m ~ 70 m remain.
+
+```{r echo = FALSE, message=FALSE, warning=FALSE, cache = TRUE, fig.width=5, fig.height=3}
+dat.all %>% 
+  mutate(bins=cut(Height, breaks=seq(10, 70, by = 10))) %>% 
+  {ggplot(.,aes(x=epoch, fill=bins)) +
+      geom_histogram(binwidth=3)+
+      theme_minimal() +
+      labs(fill='height') +
+      ggtitle("Histogram, by epoch and height") +
+      theme(
+        plot.title = element_text(color="black", size=14, hjust = 0.5),
+        axis.title.x = element_text(color="black", size=12),
+        axis.title.y = element_text(color="black", size=12)
+      ) +
+      scale_fill_manual(drop=FALSE,values = c(viridis(nlevels(.$bins)), 
+                                              viridis(nlevels(.$bins), direction = -1)))}
+
+```
+
+
+### Deep Dive: Measurements on May 20
+
+We now take one day, May 20, to get a closer look of the four measurements, as well as their changes across time and height. The epoch of May 20 is in the 9000 range, which is in Phase 2.The reason why we did not pick 1 day from Phase 1 is that, Phase 1 mostly includes days in early June, where TASK framework ran into some problems and its data became unavailable. Phase 2 includes the great majority of May dates, where both system were available. Thus, out of reliability concern, we decide to pick a day in Phase 2, May 20.
+
+First, we want to see how the measurements progress over time. Since the microclimate varies by height, we color the plot by height, to distinguish measurement changes over varying heights. The plot below shows how temperature progresses. We can see a clear inverted-U shape: at late night, from 0 am to 5 am, the temperature is relatively low, around 10 degrees. Then the sun comes out, and the temperature gradually increases and reaches its peak at noon. In the afternoon, it starts to go down and end at around 15 degrees by midnight, which is warmer than the late night. Now we take height into consideration. As the color scale shows, the darker the color, the lower the height. We can see that the lower levels are generally colder than the higher levels, especially in the morning, when the sun first comes out.
+
+```{r echo = FALSE, message=FALSE, warning=FALSE, cache = TRUE, fig.width=6, fig.height=3}
+may20 <- filter(dat.all, (date == " May 20 2004") & (humid_temp < 25)) %>% 
+  mutate(height_cat = cut(Height, breaks = seq(10, 70, by = 15)),
+         hour = as.numeric(hour) + 1,
+         hour_str = if_else((7 < hour) & (hour < 19), 'day', 'night'),
+         hour_cat = cut(hour, breaks = seq(0, 24, by = 4)),
+         direc_EW = if_else(Direc %in% c('E', 'ESE', 'NE'), 'E', 'W'))
+
+ggplot(may20) +
+  geom_point(aes(x=hour, y=humid_temp, color = Height), size = 3) +
+  scale_colour_gradient(low = "#132B43", high = "#b0dbfc") +
+  theme_minimal() +
+  labs(fill='Height') +
+  ggtitle("Temperature by hour") +
+  ylab('Temperature') +
+  xlab('Hour') +
+  theme(
+    plot.title = element_text(color="black", size=14, hjust = 0.5),
+    axis.title.x = element_text(color="black", size=12),
+    axis.title.y = element_text(color="black", size=12)
+  )
+
+```
+
+
+Next, we explore adjusted humidity. The plot belows shows how humidity progresses over time, colored by height. In late night, the humidity is at its hightest, than it gradually decreases as sun comes out, climbs up again in the late afternoon and drops again at night. The bottom levels appear to be the most humid in the morning, no other height-related pattern is discernable as the colors all mixed together.
+
+We thus decide to do a box plot of adjusted humidity, group by height bin and colored by hour bin, in order to take a closer look at the role of height. As the box plot below shows, in all four height bins, the pattern largely follows the trend we discovered in the previous plot. One noticeable thing is that, the bottom level, 10 m ~ 25 m, seems to have a wider distribution in the afternoon and early night, which indicates the unpredictability of their humidity. 
+
+```{r echo = FALSE, message=FALSE, warning=FALSE, cache = TRUE, fig.width=6, fig.height=3}
+
+ggplot(may20) +
+  geom_point(aes(x=hour, y=humid_adj, color = Height), size = 3) +
+  scale_colour_gradient(low = "#132B43", high = "#b0dbfc") +
+  theme_minimal() +
+  labs(fill='Height') +
+  ggtitle("Humidity by hour") +
+  ylab('Humidity') +
+  xlab('Hour') +
+  theme(
+    plot.title = element_text(color="black", size=14, hjust = 0.5),
+    axis.title.x = element_text(color="black", size=12),
+    axis.title.y = element_text(color="black", size=12)
+  )
+
+```
+
+```{r echo = FALSE, message=FALSE, warning=FALSE, cache = TRUE, fig.width=6, fig.height=3}
+
+ggplot(may20) +
+  geom_boxplot(aes(x=hour_cat, y=humid_adj, fill = hour_cat)) +
+  theme_light() +
+  scale_fill_brewer(palette="Blues") +
+  facet_grid(.~height_cat, switch = 'x') +
+  labs(fill='Hour') +
+  ggtitle("Distribution of Humidity, by Height and Hour") +
+  ylab('Humidity') +
+  xlab('Height Bin') +
+  theme(
+    plot.title = element_text(color="black", size=14, hjust = 0.5),
+    axis.title.x = element_text(color="black", size=12),
+    axis.title.y = element_text(color="black", size=12),
+    axis.text.x=element_blank(),
+    axis.ticks.x=element_blank(),
+    axis.text.y=element_text(face = 'bold', size = 12),
+    legend.title=element_text(size=12),
+    strip.background =element_rect(fill="white"),
+    strip.text = element_text(colour = 'black', face = 'bold', size = 12)
+  ) 
+```
+
+Lastly, we explore incident PAR. The plot shows a clear inverted-U shape pattern. At night, incident PAR = 0 because there is no direct sunlight. At 6 am, when the sun comes out, incident PAR increases, reaches to its peak at noon, and drops to 0 again at 6 pm, when the sun goes down. And as indicated by the plot, the higher values have lighter colors while the lower values are darker. It makes perfect sense because the higher levels are exposed to direct sunlight while it is harder for sunlight to reach the lower parts.
+
+```{r echo = FALSE, message=FALSE, warning=FALSE, cache = TRUE, fig.width=6, fig.height=3}
+ggplot(may20) +
+  geom_point(aes(x=hour, y=hamatop, color = Height), size = 3) +
+  scale_colour_gradient(low = "#132B43", high = "#b0dbfc") +
+  theme_minimal() +
+  labs(fill='Height') +
+  ggtitle("Incident PAR by hour") +
+  ylab('Incident PAR') +
+  xlab('Hour') +
+  theme(
+    plot.title = element_text(color="black", size=14, hjust = 0.5),
+    axis.title.x = element_text(color="black", size=12),
+    axis.title.y = element_text(color="black", size=12)
+  )
+```
+
+
+# Graphical Critique
+
+Figure 3a and 3b could have provided more information with additional elements, such as color. For example, it would be great if 3a is colored by height, in this way we can directly tell how sensor readings are distributed across heights, which provides valuable information in both checking data validity and learning from the data. The same logic applies to 3b. Instead of dissecting the readings on value, time/height * value dimensions, the researchers should make use of more plotting elements to make their plots more informative and intuitive.
+
+A good plot should allow the readers understand the key message it wants to convey within several seconds. However, apparently Figure 4 fails to do it. Because of the vagueness of its caption and (more importantly) the lack of plot title, it is almost impossible to understand the plots without reading the text. It is especially true for the spatial location plots on the right. Also, so many lines are mingled together without any legend, or explanation. Moreover, 4d can be re-scaled to be more informative. For both left and right plots of 4d, the great majority of the space is blank while the great majority of the values squeezed together in one corner. We can re-scale the x/y axis and remove extreme outliers, to move the great majority of the values back into the middle, so that we can have a much clearer view of their relationship, and deeper understanding of the point the researchers try to convey.
+
+
+# Findings
+
+## First finding
+
+First, we explore the relation between humidity and temperature. Still using the May 20 Data as an illustration, we choose 6 nodes of varying heights (heights denoted by the darkness of color: the lighter, the higher) and plot their temperature vs. humidity, respectively. Trendlines are added to better present the correlation. As the plot shows, there exists **a negative correlation between Temperature and Humidity**. Moreover, the trendlines of the six nodes are almost in parallel, which indicates that the negative correlation exists, and has largely the same magnitude across different levels of height.
+
+```{r echo = FALSE, message=FALSE, warning=FALSE, cache = TRUE, fig.width=7, fig.height=4}
+may20.height.node <- may20 %>% 
+  group_by(Height, nodeid, Tree) %>% 
+  summarise(n=n())
+
+may20.4nodes <- filter(may20, nodeid %in% c(c(80, 14, 46, 110, 42, 113)))
+
+may20.4nodes$nodeid = factor(may20.4nodes$nodeid, levels=c(80, 14, 46, 110, 42, 113))
+levels(may20.4nodes$nodeid) <- paste('Node', c(80, 14, 46, 110, 42, 113))
+
+ggplot(may20.4nodes, aes(x=humid_adj, y=humid_temp)) +
+  geom_point(aes(colour = Height), size = 3) +
+  geom_smooth(method="lm", se=FALSE, size = 2, color = 'orangered') +
+  facet_grid(.~nodeid) +
+  theme_light() +
+  ggtitle("Humidity vs. Temperature over 1 Day, by Height") +
+  ylab('Temperature') +
+  xlab('Humidity') +
+  theme(
+    plot.title = element_text(color="black", size=14, hjust = 0.5),
+    axis.title.x = element_text(color="black", size=12),
+    axis.title.y = element_text(color="black", size=12),
+    strip.text.x = element_text(size = 11)
+  )
+```
+
+## Second finding
+
+Second, we explore the relation between incident PAR and temperature. Still using the May 20 Data as an illustration, we break heights into 4 equal intervals (heights denoted by the darkness of color: the lighter, the higher) and plot their incident PAR vs. temperature, respectively. Trendlines are added to better present the correlation. As the plot shows, the slope of the trendlines become increasingly negative as we move to higher levels (the lighter color). Incident PAR and temperature are basicly uncorrelated at lower levels, but at higher levels, **there exists a clearly negative relation between them**.
+
+```{r echo = FALSE, message=FALSE, warning=FALSE, cache = TRUE, fig.width=7, fig.height=4}
+ggplot(may20.4nodes, aes(x=humid_temp, y=hamatop)) +
+  geom_point(aes(colour = Height), size = 3) +
+  geom_smooth(method="lm", se=FALSE, size = 2, color = 'orangered') +
+  facet_grid(height_cat~.) +
+  theme_light() +
+  ggtitle("Incident PAR vs. Temperature over 1 Day, by Height Bin") +
+  ylab('Incident PAR') +
+  xlab('Temperature') +
+  theme(
+    plot.title = element_text(color="black", size=14, hjust = 0.5),
+    axis.title.x = element_text(color="black", size=12),
+    axis.title.y = element_text(color="black", size=12),
+    strip.text.y = element_text(size = 11)
+  )
+```
+
+
+
+## Third finding
+
+Third, we explore the difference in temperature between edge and interior of the tree, over time. Using the all the data, for edge and interior, respectively, we plot how temperature progresses over time, colored by height. Horizontal lines at temperature = 27.5 degrees are added to better illustrate the point. As the plot shows, at almost all times, interior has much more points over the trendline than edge, indicating that **its temperature is higher than that of edge**. Moreover, in the morning, edge's above-trendline temperatures are generally from higher levels (as indicated by the lighter color) and in late afternoon/early evening, the high temperatures are from bottom levels. It seems like the interior's higher level does a good job at absorbing sunlight in the morning and its lower levels at preserving heat. On the contrast, edge's color is more mixed and we could not discern any meaningful patterns.
+
+```{r echo = FALSE, message=FALSE, warning=FALSE, cache = TRUE, fig.width=10, fig.height=5}
+ggplot(dat.all, aes(x=hour, y=humid_temp)) +
+  geom_point(aes(colour = Height), size = 1) +
+  geom_hline(yintercept=27.5, color = 'orangered', size = 1) +
+  facet_wrap(~Tree) +
+  theme_light() +
+  ggtitle("Temperature over 1 Day, by Tree") +
+  ylab('Temperature') +
+  xlab('Hour') +
+  theme(
+    plot.title = element_text(color="black", size=14, hjust = 0.5),
+    axis.title.x = element_text(color="black", size=12),
+    axis.title.y = element_text(color="black", size=12),
+    strip.text.y = element_text(size = 11),
+    strip.text = element_text(colour = 'white', face = 'bold', size = 12)
+  )
+```
+
+
+# Discussion
+
+Did the data size restric you in any way? On some level, yes. Large data size brings about computational constraints to the analysis process. A simple temperature vs. epoch scatterplot will take a while to finish, not to mention something fancier. The large data size slows the whole process in the beginning, as we need to start with manipulation on the whole data set. It only gets better when we shrink the dataset of interest down.
+
+Moreover, due to the large data size, for almost all variables of interest, their distributions are very messy, with points all over the place. At the start, it may be very challenging for understanding and cleaning the data, because the patterns are not very discernable and it's hard to know which way to go. Reading the paper and every bit of documentation about the dataset have become very important in this case.
+
+
+# Conclusion
+
+This report presents a complete pre-processing and exploratory analysis of a relatively raw and large dataset. Due to time and space constraints, there is still a lot about the dataset worth exploring, i.e., correlation matrix of all measurements, trend analysis of a longer period, etc. 

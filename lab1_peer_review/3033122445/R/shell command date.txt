@@ -1,0 +1,7 @@
+$ grep epochNums data/sonoma-dates > data/sonoma-dates-epochNums.txt
+
+fando@Fan-XPS-15 MINGW64 ~/Box Sync/stat-215-a/lab 1 (master)
+$ grep epochDates data/sonoma-dates > data/sonoma-dates-epochDates.txt
+
+fando@Fan-XPS-15 MINGW64 ~/Box Sync/stat-215-a/lab 1 (master)
+$ grep epochDays data/sonoma-dates > data/sonoma-dates-epochDays.txt
