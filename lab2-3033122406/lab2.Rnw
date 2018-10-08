@@ -1,0 +1,567 @@
+\documentclass{article}
+
+\usepackage{geometry}
+\geometry{verbose,tmargin=1in,bmargin=1in,lmargin=1in,rmargin=1in}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\setlength{\parskip}{\smallskipamount}
+\setlength{\parindent}{0pt}
+\usepackage{amsthm}
+\usepackage{amsmath}
+
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+
+\title{Lab 2 - Linguistic Survey\\
+Stat 215A, Fall 2017}
+
+
+\author{Melody(Mengling) Liu}
+
+\maketitle
+
+<<setup, echo = FALSE, message=FALSE, warning=FALSE>>=
+# load in useful packages
+library(ggplot2)
+library(magrittr)
+library(ggmap)
+library(caret)
+library(data.table)
+library(dummies)
+library(RgoogleMaps)
+library(dplyr)
+library(gridExtra)
+library(lattice)
+library(ggmap)
+
+@
+
+
+\section{Kernel density plots and smoothing}
+These tasks use the redwood data from the previous lab. These tasks are focused on experimenting with parameters in kernel smoothers.
+
+1. Plot a density estimate for the distribution of temperature over the whole dataset. Experiment with different kernels and bandwidth. Explain your findings.
+
+I used both gaussian and triangular kernel to estimate the distribution. I discovered that the larger the bandwidth, the more smooth the plot will be and the plot will be closer to the original kernel distribution. Therefore there is trade off between variance and bias. 
+
+<<echo = FALSE, message = FALSE, warning = FALSE, fig = TRUE, out.width= '5in', out.height='4in',fig.align='center'>>=
+# Read in the redwood data after cleaning
+redwood_combine_clean <- read.csv("redwood_combine_clean.csv")
+
+# Plot density estimate for the distribution of temperature.
+# Plot multiple graphs in one plot.
+plot1 <- ggplot(redwood_combine_clean) + 
+  geom_density(aes(humid_temp), kernel = 'gaussian') + 
+  ggtitle("Gaussian kernel default bandwidth") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="Temperature (°C)", y="Density")
+
+plot2 <- ggplot(redwood_combine_clean) + 
+  geom_density(aes(humid_temp), kernel = 'gaussian', adjust = 1/2) +
+  ggtitle("Gaussian kernel 1/2 bandwidth") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="Temperature (°C)", y="Density")
+
+plot3 <- ggplot(redwood_combine_clean) + 
+  geom_density(aes(humid_temp), kernel = 'gaussian', adjust = 1/3) +
+  ggtitle("Gaussian kernel 1/3 bandwidth") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="Temperature (°C)", y="Density")
+
+plot4 <- ggplot(redwood_combine_clean) + 
+  geom_density(aes(humid_temp), kernel = 'gaussian', adjust = 2) +
+  ggtitle("Gaussian kernel 2 bandwidth") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="Temperature (°C)", y="Density")
+
+plot5 <- ggplot(redwood_combine_clean) +
+  geom_density(aes(humid_temp), kernel = 'triangular') +
+  ggtitle("Triangular kernel default bandwidth") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="Temperature (°C)", y="Density")
+  
+plot6 <- ggplot(redwood_combine_clean) +
+  geom_density(aes(humid_temp), kernel = 'triangular', adjust = 1/2) +
+  ggtitle("Triangular kernel 1/2 bandwidth") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="Temperature (°C)", y="Density")
+
+plot7 <- ggplot(redwood_combine_clean) +
+  geom_density(aes(humid_temp), kernel = 'triangular', adjust = 1/3) +
+  ggtitle("Triangular kernel 1/3 bandwidth") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="Temperature (°C)", y="Density")
+
+plot8 <- ggplot(redwood_combine_clean) +
+  geom_density(aes(humid_temp), kernel = 'triangular', adjust = 2) +
+  ggtitle("Triangular kernel 2 bandwidth") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="Temperature (°C)", y="Density")
+
+grid.arrange(plot1, plot2, plot3, plot4, plot5,plot6,plot7,plot8, layout_matrix=rbind(c(1,2),c(3,4),c(5,6),c(7,8)), top="Kernel estimation of temperature distribution") 
+
+@
+
+2. Choose a time of day and plot the temperature against the humidity for all nodes at that time for the entire project period. Add a loess smoother to the plot. Experiment with bandwidth and the degree of the polynomials. Explain your findings.
+
+I chose 00:30 of the day and plotted the temperature against the humidity of all nodes at that time for the entire project period.
+
+I observed from the plots below that the smaller the bandwidth is, the wigglier the line is. Also the higher degree of polynomials, the wigglier the line is.
+
+<<echo = FALSE, message = FALSE, warning = FALSE, fig = TRUE, out.width= '5in', out.height='4in',fig.align='center'>>=
+
+plot_1 <- redwood_combine_clean %>% 
+  filter(epoch %% 288 == 5) %>% # time to be 00:30
+  ggplot(aes(x = humidity, y = humid_temp)) + 
+  geom_point() + 
+  geom_smooth(method = "loess") +
+  ggtitle("Default bandwidth") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="humidity (%RH)", y="temperature (°C)") 
+
+plot_2 <- redwood_combine_clean %>% 
+  filter(epoch %% 288 == 5) %>% # time to be 00:30
+  ggplot(aes(x = humidity, y = humid_temp)) + 
+  geom_point() + 
+  geom_smooth(method = "loess", span = 0.2) +
+  ggtitle("Smaller bandwidth") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="humidity (%RH)", y="temperature (°C)") 
+
+plot_3 <- redwood_combine_clean %>% 
+  filter(epoch %% 288 == 5) %>% # time to be 00:30
+  ggplot(aes(x = humidity, y = humid_temp)) + 
+  geom_point() + 
+  geom_smooth(method = "loess", formula = y ~ poly(x,2)) +
+  ggtitle("Polynomial degree of 2") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="humidity (%RH)", y="temperature (°C)") 
+
+plot_4 <- redwood_combine_clean %>% 
+  filter(epoch %% 288 == 5) %>% # time to be 00:30
+  ggplot(aes(x = humidity, y = humid_temp)) + 
+  geom_point() + 
+  geom_smooth(method = "loess", span = 3, formula = y ~ poly(x,2)) +
+  ggtitle("Polynomial degree of 2 with larger bandwith") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="humidity (%RH)", y="temperature (°C)") 
+
+grid.arrange(plot_1,plot_2,plot_3,plot_4, nrow = 2, top = "Plot of temperature against humidity")
+
+@
+
+\section{Introduction}
+Dialectology is the study of dialects, and dialectometry is the measurement of dialect differences, i.e. linguistic differences whose distribution is determined primarily by geography. Dialectology may be classified within the more general study of how languages vary not only along geographical, but also social lines or along lines of age and gender. In addition to dialectology, the study of linguistic variation as it correlates with social class, age, sex, and occupation.
+
+In this r eport, we studied the linguistic varieties that primarily determined by geography. We analyzed the linguistic survey data that contains the answers of 72 questions regarding to daily colloquial expressions from more than forty thousands respondent across North America. 
+
+Here I first performed dimension reduction using principal component analysis and then applied k-means clustering on the dimension-reduced form of data. 
+
+\section{The Data}
+<<echo = FALSE, message = FALSE, warning = FALSE>>=
+lingData <- read.table("lingData.txt", header = TRUE)
+lingLocation <- read.table("lingLocation.txt", header = TRUE)
+load("question_data.RData")
+
+# load three datasets 
+# quest.mat
+# quest.use
+# all.ans
+@
+\subsection{Data quality and cleaning}
+
+We have five data frames loaded: lingData, lingLocation, question.mat, quest.user, all.ans
+
+lingData: contains 47,471 observations and 73 features, including observation ID, city, state, zipcode, answers for question 50 to question 121, the latitude and longitude of the location. 
+
+lingLocation: contains 781 locations and 471 features, including the one-hot coding for 72 questions, numbers of observations at this location, and latitude and longitude for this location.
+
+quest.mat: all the questions that were asked in the survey, 121 in total. 
+
+quest.use: all the questions that are included in the lingData and lingLocation
+
+I first check whether there are missing values for each column. There are no missing value for ID, City and Zip, but there are three missing values for state, so I filled in the state name corresponding to the zip code. 
+
+<<echo = FALSE, message = FALSE, warning = FALSE>>=
+# check if there are missing values
+#lingData[is.na(lingData$ID),]
+#lingData[is.na(lingData$CITY),]
+#lingData[is.na(lingData$STATE),] # three missing value here
+#lingData[is.na(lingData$ZIP),]
+# fill up three missing states by their zipcode 
+lingData$STATE[is.na(lingData$STATE)] <- c("TX", "OH", "IL")
+
+#lingData[is.na(lingData[,5:71]),]
+#lingData[is.na(lingData$lat),]
+#sum(is.na(lingData$lat)) # 1020 latitude number is null
+#lingData[is.na(lingData$long),]
+#sum(is.na(lingData$long)) # 1020 longtitude number is null
+
+@
+
+\subsection{Exploratory Data Analysis}
+
+I am interested in the geographical distribution of answers for question 80 and question 70.
+
+Question 80: What do you call it when rain falls while the sun is shining?
+
+Question 70: What do did you call your maternal grandfather??
+
+First, regarding question 80. 55.15 percent of people came up with answer "I have no term or expression for this", 34.29 percent have answer "sunshower", 6.43 percentage have answer "the devil is beating his wife", 3.02 percentage have answer "other", etc.
+
+I narrowed the geographical scope to US mainland only. Then I plotted each answer as a dot on the US map with colors representing different answers. We observe from the graph that people from different areas of the US gave different answers. People from New England Area tend to give sunshower as an answer, while people from the South came up with answer "the devil is beating his wife". The black dots representing "I have no term or expression for this" have the most wide distribution across the West and North of the US. 
+
+<<echo = FALSE, message = FALSE, warning = FALSE, fig = TRUE, out.width= '5in', out.height='4in',fig.align='center'>>=
+# extract a data frame where stores question 80 and question 70. 
+df <- lingData[,c("CITY", "STATE", "Q080", "Q070","lat", "long")]
+
+# Turn the quesions into character
+df$Q080 <- as.character(df$Q080)
+df$Q070 <- as.character(df$Q070)
+
+# Answers for question 80
+# all.ans[80]
+
+# Save the map to map.RData
+us <- c(left = -125, bottom = 25.75, right = -67, top = 49)
+map <- get_stamenmap(us, zoom = 5, maptype = "toner-lite")
+save(map, file = "map.RData")
+
+# load the map from google map.
+load("map.RData")
+ans_80 <- c("no answer","sunshower", "the wolf is giving birth", "the devil is beating his wife", "monkey's wedding", "fox's wedding",
+          "pineapple rain", "liquid sun","I have no term or expression for this", "other")
+colors_80 <- c("grey","red","blue","yellow","green","orange","purple","pink","black","navy")
+
+# plot the map of question 80
+map %>% 
+  ggmap() + 
+  geom_point(data = df, 
+             mapping = aes(x = long, y = lat, color = Q080), 
+              alpha = 0.8, size = 1) + 
+  scale_x_continuous(limits = c(-130, -60)) + 
+  scale_y_continuous(limits = c(20, 50)) + 
+  scale_color_manual(labels = ans_80, values = colors_80) +
+  theme_bw() +
+  ggtitle("Geographical distribution Q80") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+@
+
+Second, I also explore the answers to question 70 - "What do did you call your maternal grandfather?".
+Regarding question 70. Gramps: 1.02 percentage; Grandpa: 21.05 percentage; Grampa: 13.86 percentage; Grandad,granddad: 5.07 percentage; pap: 0.84 percentage; I spell it 'grandpa' but pronounce it as grampa: 25.90 percentage; other: 32.26 percentage. 
+
+Similarly, I plotted each answer as a dot on the US map with colors representing different answers. We observe from the graph that people from different areas of the US gave slightly different answers. People from the North tend to come up with answer such as "grandpa" or "I spell it as grandpa but pronounce it as grampa", on the other hand, people from the South and West tend to give more "other" answers.
+
+<<echo = FALSE, message = FALSE, warning = FALSE, fig = TRUE, out.width= '5in', out.height='4in',fig.align='center'>>=
+# Answers for question 70
+# all.ans[70]
+
+# load the map from google map. 
+load("map.RData")
+ans_70 <- c("no answer", "gramps", "grandpa", "grampa", "grandad, granddad", "pap", "I spell it 'grandpa' but pronounce it as 'grampa'", "other")
+colors_70 <- c("grey","red","blue","yellow","green","orange","purple","black")
+
+# plot the map of question 70
+map %>% 
+  ggmap() + 
+  geom_point(data = df, 
+             mapping = aes(x = long, y = lat, color = Q070), 
+              alpha = 0.8, size = 0.8) + 
+  scale_x_continuous(limits = c(-130, -60)) + 
+  scale_y_continuous(limits = c(20, 50)) + 
+  scale_color_manual(labels = ans_70, values = colors_70) +
+  theme_bw() +
+  ggtitle("Geographical distribution Q70") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+@
+
+\section{Dimension reduction methods}
+
+I first encoded the answer data to one-hot and I removed the features with No.0 because No.0 means this individual didn't have a response for this question. 
+
+<<echo = FALSE, message = FALSE, warning = FALSE>>=
+# extract answers of question 50 to 121
+df_onehot <- lingData[,5:71]
+df_names <- names(df_onehot)
+# binary encoding of the matrix 
+df_onehot <- dummy.data.frame(df_onehot, names = df_names, sep = "_")
+# remove Q050_0, Q051_0, Q052_0... 
+df_onehot <- df_onehot[, !(names(df_onehot) %in% paste0(df_names, "_0"))]
+
+@
+
+Principal Component Analysis:
+
+In order to implement dimensional reduction, I ran PCA on the binary encoding matrix with normalization. 
+The following plots show the cumulative percentage explained by principal components. 
+
+<<echo = FALSE, message = FALSE, warning = FALSE, fig = TRUE, out.width= '5in', out.height='4in', fig.align='center'>>=
+pca <- prcomp(df_onehot, center = TRUE, scale. = TRUE)
+
+# We want to calculate the cumulative percentage explained by principal components
+# Percentage explained by principal components is calculated as the square of their singluar value divided by the total sum of single value square
+percentage <- pca$sdev^2 / sum(pca$sdev^2)
+percentage_sum <- rep(0, length(percentage))
+for(i in 1:length(percentage)){
+  percentage_sum[i] <- sum(percentage[1:i])
+}
+percentage_sum <- data.frame(percentage_sum)
+percentage_sum$PC <- 1:length(percentage)
+
+# Plot the cumulative percentage explained by PC
+ggplot(percentage_sum) + 
+  geom_line(aes(x = PC, y = percentage_sum)) +
+  theme_bw() +
+  ggtitle("Cumulative percentage explained by principal components") + 
+  labs(x = "Principal components", y = "Cumulative percentage") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# New projection result:
+X = as.data.frame(pca$x) 
+X$lat = df$lat
+X$long = df$long
+X$State = df$STATE
+
+@
+
+According to the plot, the first 150 PCs explained around 55 percent of the variation of the observations, and the first 250 PCs explained around 75 percent of the variation of the observations. The first PC only explained around 1.9 percent of variation, which is pretty small. The top ten PCs also were not able to explain large percentage of variation in observations.
+
+Based on the discovery from above on the relationship between location and question answers, it is interesting to see if there is any pattern of principal components associated with locations. 
+
+First, I grouped the states into several regions, according to their locations.
+
+Northeast: NY, NH, MA, ME, VT, CT, RI, PA, NJ, DE, MD, DC
+
+Pacific: CA, OR, WA, AK, HI
+
+Midwest: MI, OH, IN, WI, IL, IA, MN, ND, SD, NE, KS, MT
+
+South: TN,AL, AR, KY, LA, GA, FL, MS, NC, SC, VA, WV, MO, OK
+
+Frontier: TX, NM, AZ, WY, CO, ID, NV, UT
+
+Western Canada: BC, AB,MB,SK, YT, NT, NU
+
+Eastern Canada: ON, QC, PE, NL, NB, NS
+
+Other: States not belonging to any regions above
+
+<<echo = FALSE, message = FALSE, warning = FALSE>>=
+# Classify states to below regions. I combined western Canada with Eastern Canada as Canada.
+X$Region = "Other"
+Northeast = c("NY","NH", "MA", "ME", "VT", "CT", "RI", "PA", "NJ", "DE", "MD", "DC")
+Pacific = c("CA", "OR", "WA", "AK", "HI")
+Midwest = c("MI", "OH", "IN", "WI", "IL", "IA", "MN", "ND", "SD", "NE", "KS", "MT")
+South = c("TN","AL", "AR", "KY", "LA", "GA", "FL", "MS", "NC", "SC", "VA", "WV","MO","OK")
+Frontier = c("TX","AZ", "WY", "CO", "ID",  "NV", "UT")
+Western_Canada= c("BC", "AB","MB","SK", "YT", "NT", "NU")
+Eastern_Canada = c("ON", "QC", "PE", "NL", "NB", "NS")
+Canada = c("BC", "AB","MB","SK", "YT", "NT", "NU", "ON", "QC", "PE", "NL", "NB", "NS")
+# I assigned the observations to regions based on their states
+X$Region[X$State %in% Northeast] = "Northeast"
+X$Region[X$State %in% Pacific] = "Pacific"
+X$Region[X$State %in% Midwest] = "Midwest"
+X$Region[X$State %in% South] = "South"
+X$Region[X$State %in% Frontier] = "Frontier"
+X$Region[X$State %in% Canada] = "Canada"
+# Count how many observations belong to each state
+#sum(X$State %in% Midwest) # 14431
+#sum(X$State %in% Northeast) # 12540
+#sum(X$State %in% South) # 9376
+#sum(X$State %in% Pacific) # 6397
+#sum(X$State %in% Frontier) # 4375
+#sum(X$State %in% Canada) # 13
+
+@
+
+After grouping by Region, there are 14431 observations under Midwest, 12540 under Northeast, 6397 observations under Pacific, 4374 observations under Frontier, and 13 observations under Canada. 
+
+I conducted pairwise plot on PCs, including PC1 vs. PC2, PC1 vs. PC3, and PC1 vs. PC4. I selected 8000 samples out to create the plot.
+
+The first two plots showed fairly clear clustering patterns. 
+
+On the pairwise plot of PC1 vs. PC2, PC1 separates Northeast fairly well from the South and MidWest. Northeast mostly located from 0 to 10 on PC1 and South located mostly from -7 to 0 on PC1. Also I observe that PC2 separates the South well from MidWest: the South sits in the range of -10 to 0 on PC2, and MidWest on the range of -2 to 3 on PC2. This indicates that NorthEast has a larger positive PC1 coefficient, and South has a larger negative PC2 coefficient.
+
+On the pairwise plot of PC1 vs. PC3, we observe pretty clear pattern of PC1 separating Northeast out. NorthEast has a larger positive PC1 coefficient. However, PC3 doesn't capture strong pattern on location segmentation here.
+
+On the pairwise plot of PC1 vs. PC4, we observe the same pattern as PC1 vs. PC3 that PC1 clearly separates NorthEast out from the graph. Similarly, PC4 doesn't capture strong pattern on location segmentation.
+
+<<echo = FALSE, message = FALSE, warning = FALSE, fig = TRUE, out.width= '5in', out.height='4in',fig.align='center'>>=
+set.seed(1)
+# sample 8000 observations to visualize 
+index = sample(1:47471, 8000, replace = FALSE)
+# scatter plot PC1 vs PC2
+plot12 <- X[index,] %>% ggplot() +
+  geom_point(aes(x = PC1, y = PC2, color = Region), alpha = 0.8) +
+  scale_color_manual(values = c("red","orange","grey","green","yellow","blue","purple"),
+                     labels = c("Canada",
+                                "Frontier",
+                                "MidWest",
+                                "NorthEast",
+                                "Other",
+                                "Pacafic",
+                                "South")) +
+  ggtitle("Pairwise plot of PC1 vs PC2") + 
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+  
+# scatter plot PC1 vs PC3
+plot13 <- X[index,] %>% ggplot() +
+  geom_point(aes(x = PC1, y = PC3, color = Region), alpha = 0.8) +
+  scale_color_manual(values = c("red","orange","grey","green","yellow","blue","purple"),
+                     labels = c("Canada",
+                                "Frontier",
+                                "MidWest",
+                                "NorthEast",
+                                "Other",
+                                "Pacafic",
+                                "South")) +
+  ggtitle("Pairwise plot of PC1 vs PC3") + 
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+# scatter plot PC1 vs PC4
+plot14 <- X[index,] %>% ggplot() +
+  geom_point(aes(x = PC1, y = PC4, color = Region), alpha = 0.8) +
+  scale_color_manual(values = c("red","orange","grey","green","yellow","blue","purple"),
+                     labels = c("Canada",
+                                "Frontier",
+                                "MidWest",
+                                "NorthEast",
+                                "Other",
+                                "Pacafic",
+                                "South")) +
+  ggtitle("Pairwise plot of PC1 vs PC4") + 
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+grid.arrange(plot12, plot13, plot14, layout_matrix=rbind(c(1),c(2),c(3))) 
+
+@
+
+Interesting findings: 
+
+I want to find out which factor contributes the most to PC1. I looked into the linear combination of PC1 and located the maximum absolute number of PC1 rotation to tbe the 73rd question. The 73rd question goes "What is your general term for the rubber-soled shoes worn in gym class, for athletic activities?" "Sneakers" as an answer takes up 45.5 percent and therefore "sneakers" as an answer to the 73rd question contributed the most to PC1. 
+
+<<echo = FALSE, message = FALSE, warning = FALSE>>=
+# find the feature contributes to PC1 most
+PC_1 = pca$rotation[,1]
+which.max(abs(PC_1))
+all.ans[[73]]
+@
+
+K Means Clustering:
+
+After the dimension reduction with PCA, we understand the first 250 PCs explained around 75 percent of the variation of the observations. Then I reduced the dimension from 468 to 200 and then applied K-means clustering on reduced matrix.
+
+We can observe from the map plot that no matter whether we choose to adopt four or six clusters, the end results are fairly close. Northeast New England area, Southeast, and Midwest are the major clusters. Geographical location as a factor does matter to the question answers. The difference is that the six cluster further separate the New England Area out from the Northeast area, and MidEast area also stood out as a new segmentation as well.
+
+<<echo = FALSE, message = FALSE, warning = FALSE, fig = TRUE, out.width= '5in', out.height='4in',fig.align='center'>>=
+# Kmeans with 4 clusters
+kmeans <- kmeans(X[,1:250], 4)
+df$Cluster = as.character(kmeans$cluster)
+# Plot the map with 4 clusters
+cluster_plot1<-map %>%
+  ggmap() + 
+  geom_point(data = df, 
+             mapping = aes(x = long, y = lat, color = Cluster), 
+              alpha = 0.8, size = 0.5) + 
+  scale_x_continuous(limits = c(-130, -60)) + 
+  scale_y_continuous(limits = c(20, 50)) + 
+  ggtitle("Kmeans clustering with four clusters") + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Kmeans with 6 clusters
+kmeans <- kmeans(X[,1:250], 6)
+df$Cluster = as.character(kmeans$cluster)
+# Plot the map with 6 clusters
+cluster_plot2<-map %>%
+  ggmap() + 
+  geom_point(data = df, 
+             mapping = aes(x = long, y = lat, color = Cluster), 
+              alpha = 0.8, size = 0.5) + 
+  scale_x_continuous(limits = c(-130, -60)) + 
+  scale_y_continuous(limits = c(20, 50)) + 
+  ggtitle("Kmeans clustering with six clusters") + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+grid.arrange(cluster_plot1, cluster_plot2, nrow = 2)
+
+@
+
+\section{Stability of findings to perturbation}
+
+I manually perturbated the answers with randomly chosen questions and answers. I randomly changed the encoding of problem 59, 69, 79, 89, 99, 109. To test the robustness of the above findings, I ran PCA on the new encoding matrix and applied k-means clustering to check if similar results can be achieved.
+
+From the new plot on the perturbated data, we can conclude that the above conclusions are robust and stable. Question 73 is still the one that contribute most to PC1. The clustering results are also very similar as well with Northeast, Southeast and Midwest being the major clusters.
+
+<<echo = FALSE, message = FALSE, warning = FALSE, fig = TRUE, out.width= '5in', out.height='4in',fig.align='center'>>=
+df_onehot_2 <- lingData[,5:71]
+# manually change the matrix
+df_onehot_2[1000, 10] = 2
+df_onehot_2[1000, 20] = 6
+df_onehot_2[1000, 30] = 4
+df_onehot_2[1000, 40] = 2
+df_onehot_2[1000, 50] = 8
+df_onehot_2[1000, 60] = 3
+df_names2 <- names(df_onehot_2)
+df_onehot_2 <- dummy.data.frame(df_onehot_2, names = df_names2, sep = "_")
+df_onehot_2 <- df_onehot_2[, !(names(df_onehot_2) %in% paste0(df_names2, "_0"))]
+
+# Fit PCA onto the data
+pca_2 <- prcomp(df_onehot_2, center = TRUE, scale. = TRUE)
+PC1_2 <- pca_2$rotation[,1]
+#which.max(abs(PC1_2)) # still 73rd question
+
+# kmeans with four clusters
+kmeans_2 <- kmeans(pca_2$x[,1:250], 4)
+df$Cluster_2 = as.character(kmeans_2$cluster)
+# plot the kmeans with four clusters
+map %>%
+  ggmap() + 
+  geom_point(data = df, 
+             mapping = aes(x = long, y = lat, color = Cluster_2), 
+              alpha = 0.8, size = 0.5) + 
+  scale_x_continuous(limits = c(-130, -60)) + 
+  scale_y_continuous(limits = c(20, 50)) + 
+  ggtitle("Kmeans clustering with four clusters (perturbation)") + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+@
+
+\section{Conclusion}
+
+We can conclude from the above analysis that there are geographical location contributes significantly to the dialect varieties. Question 73 is still the one that contribute most to PC1. I performed principal component analysis to reduce dimension from more than 400 to 250 and then applied k means clustering to group the geographical locations to 4 or 6 groups. Northeast, Southeast and Midwest are the three major clusters. The clustering result is robust with perturbated data as well.
+
+
+\begin{thebibliography}{1}
+\bibitem{paper} 
+J.Nerbonne, W.Kretzschmar
+\textit{University of Groningen, University of Georgia}. 
+Introducing Computational Techniques in Dialectometry.
+
+
+\bibitem{paper} 
+J.Nerbonne, W.Kretzschmar
+\textit{University of Groningen, University of Georgia}. 
+Progress in Dialectometry: Toward Explanation
+\end{thebibliography}
+
+
+
+\end{document}
