@@ -1,0 +1,214 @@
+\documentclass{article}
+
+\usepackage{geometry}
+\geometry{verbose,tmargin=1in,bmargin=1in,lmargin=1in,rmargin=1in}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\setlength{\parskip}{\smallskipamount}
+\setlength{\parindent}{0pt}
+\usepackage{amsthm}
+\usepackage{amsmath}
+
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+
+\title{Lab 3 addition - Plot on full data set, Fall 2017}
+
+
+\author{Melody Liu}
+
+\maketitle
+
+<<echo = FALSE, message = FALSE, warning = FALSE>>=
+library(foreach)
+library(dplyr)
+library(gridExtra)
+library(doParallel)
+library(Rcpp)
+library(ggplot2)
+
+@
+
+I also ran the full data set with similarity function in CPP. It took me around 7 hours in my local machine. Results and plots will be shared in the report. 
+
+I plotted the two graphs with results generated from the full data set. Very similar pattern of cumulative distributions for increasing values of k was observed while distribution of similarity measure differs from the previous plot. k=2 still achieved the highest similarity score which is optimal for the choice of k. 
+
+<<echo = FALSE, message = FALSE, warning = FALSE, fig = TRUE>>=
+# Read in Similarity_output and rename the title
+Similarity_output_C <- read.csv("Similarity_output_C_full.csv",header = TRUE)
+names(Similarity_output_C)<-c("Index","k2","k3","k4","k5","k6","k7","k8","k9","k10")
+
+## Histogram of the correlation similarity measure ##
+p1<-Similarity_output_C %>%
+  select("k2") %>%
+  ggplot() +
+  geom_histogram(aes(x=k2)) +
+  ggtitle("k=2") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x='',y='')
+
+p2<-Similarity_output_C %>%
+  select("k3") %>%
+  ggplot() +
+  geom_histogram(aes(x=k3)) +
+  ggtitle("k=3") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x='',y='')
+
+p3<-Similarity_output_C %>%
+  select("k4") %>%
+  ggplot() +
+  geom_histogram(aes(x=k4)) +
+  ggtitle("k=4") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x='',y='')
+
+p4<-Similarity_output_C %>%
+  select("k5") %>%
+  ggplot() +
+  geom_histogram(aes(x=k5)) +
+  ggtitle("k=5") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x='',y='')
+
+p5<-Similarity_output_C %>%
+  select("k6") %>%
+  ggplot() +
+  geom_histogram(aes(x=k6)) +
+  ggtitle("k=6") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x='',y='')
+
+p6<-Similarity_output_C %>%
+  select("k7") %>%
+  ggplot() +
+  geom_histogram(aes(x=k7)) +
+  ggtitle("k=7") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x='',y='')
+
+p7<-Similarity_output_C %>%
+  select("k8") %>%
+  ggplot() +
+  geom_histogram(aes(x=k8)) +
+  ggtitle("k=8") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x='',y='')
+
+p8<-Similarity_output_C %>%
+  select("k9") %>%
+  ggplot() +
+  geom_histogram(aes(x=k9)) +
+  ggtitle("k=9") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x='',y='')
+
+p9<-Similarity_output_C %>%
+  select("k10") %>%
+  ggplot() +
+  geom_histogram(aes(x=k10)) +
+  ggtitle("k=10") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x='',y='')
+
+grid.arrange(p1,p2,p3,p4,p5,p6,p7,p8,p9, nrow = 3, top = "Histogram of the correlation similarity measure (CPP)")
+@
+
+<<echo = FALSE, message = FALSE, warning = FALSE, fig = TRUE>>=
+
+## Overlay of the cumulative distributions for increasing values of k ##
+Similarity_output <- Similarity_output_C
+# For k=2, x=k2 after ordering and rescaling to [0,1]
+# y=cumulative number on k2 after rescaling to [0,1]
+Similarity_output$k2_order<-sort(Similarity_output$k2)
+Similarity_output$k2_cum <- Similarity_output$k2_order / sum(Similarity_output$k2_order)
+for (i in 2:100){
+  Similarity_output$k2_cum[i] <- Similarity_output$k2_cum[i-1]+Similarity_output$k2_cum[i]
+}
+
+# For k=3, x=k3 after ordering and rescaling to [0,1]
+# y=cumulative number on k3 after rescaling to [0,1]
+Similarity_output$k3_order<-sort(Similarity_output$k3)
+Similarity_output$k3_cum <- Similarity_output$k3_order / sum(Similarity_output$k3_order)
+for (i in 2:100){
+  Similarity_output$k3_cum[i] <- Similarity_output$k3_cum[i-1]+Similarity_output$k3_cum[i]
+}
+
+# For k=4, x=k4 after ordering and rescaling to [0,1]
+# y=cumulative number on k4 after rescaling to [0,1]
+Similarity_output$k4_order<-sort(Similarity_output$k4)
+Similarity_output$k4_cum <- Similarity_output$k4_order / sum(Similarity_output$k4_order)
+for (i in 2:100){
+  Similarity_output$k4_cum[i] <- Similarity_output$k4_cum[i-1]+Similarity_output$k4_cum[i]
+}
+
+# For k=5, x=k5 after ordering and rescaling to [0,1]
+# y=cumulative number on k5 after rescaling to [0,1]
+Similarity_output$k5_order<-sort(Similarity_output$k5)
+Similarity_output$k5_cum <- Similarity_output$k5_order / sum(Similarity_output$k5_order)
+for (i in 2:100){
+  Similarity_output$k5_cum[i] <- Similarity_output$k5_cum[i-1]+Similarity_output$k5_cum[i]
+}
+
+# For k=6, x=k6 after ordering and rescaling to [0,1]
+# y=cumulative number on k6 after rescaling to [0,1]
+Similarity_output$k6_order<-sort(Similarity_output$k6)
+Similarity_output$k6_cum <- Similarity_output$k6_order / sum(Similarity_output$k6_order)
+for (i in 2:100){
+  Similarity_output$k6_cum[i] <- Similarity_output$k6_cum[i-1]+Similarity_output$k6_cum[i]
+}
+
+# For k=7, x=k7 after ordering and rescaling to [0,1]
+# y=cumulative number on k7 after rescaling to [0,1]
+Similarity_output$k7_order<-sort(Similarity_output$k7)
+Similarity_output$k7_cum <- Similarity_output$k7_order / sum(Similarity_output$k7_order)
+for (i in 2:100){
+  Similarity_output$k7_cum[i] <- Similarity_output$k7_cum[i-1]+Similarity_output$k7_cum[i]
+}
+
+# For k=8, x=k8 after ordering and rescaling to [0,1]
+# y=cumulative number on k8 after rescaling to [0,1]
+Similarity_output$k8_order<-sort(Similarity_output$k8)
+Similarity_output$k8_cum <- Similarity_output$k8_order / sum(Similarity_output$k8_order)
+for (i in 2:100){
+  Similarity_output$k8_cum[i] <- Similarity_output$k8_cum[i-1]+Similarity_output$k8_cum[i]
+}
+
+# For k=9, x=k9 after ordering and rescaling to [0,1]
+# y=cumulative number on k9 after rescaling to [0,1]
+Similarity_output$k9_order<-sort(Similarity_output$k9)
+Similarity_output$k9_cum <- Similarity_output$k9_order / sum(Similarity_output$k9_order)
+for (i in 2:100){
+  Similarity_output$k9_cum[i] <- Similarity_output$k9_cum[i-1]+Similarity_output$k9_cum[i]
+}
+
+# For k=10, x=k10 after ordering and rescaling to [0,1]
+# y=cumulative number on k10 after rescaling to [0,1]
+Similarity_output$k10_order<-sort(Similarity_output$k10)
+Similarity_output$k10_cum <- Similarity_output$k10_order / sum(Similarity_output$k10_order)
+for (i in 2:100){
+  Similarity_output$k10_cum[i] <- Similarity_output$k10_cum[i-1]+Similarity_output$k10_cum[i]
+}
+
+plot_C<-Similarity_output %>%
+  ggplot() +
+  geom_line(aes(x=k2_order, y=k2_cum, color="2 clusters")) +
+  geom_line(aes(x=k3_order, y=k3_cum, color="3 clusters")) +
+  geom_line(aes(x=k4_order, y=k4_cum, color="4 clusters")) +
+  geom_line(aes(x=k5_order, y=k5_cum, color="5 clusters")) +
+  geom_line(aes(x=k6_order, y=k6_cum, color="6 clusters")) +
+  geom_line(aes(x=k7_order, y=k7_cum, color="7 clusters")) +
+  geom_line(aes(x=k8_order, y=k8_cum, color="8 clusters")) +
+  geom_line(aes(x=k9_order, y=k9_cum, color="9 clusters")) +
+  geom_line(aes(x=k10_order, y=k10_cum, color="10 clusters")) +
+  ggtitle("Cumulative distributions for increasing values of k (CPP)􏱹") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x='Similarity',y='Cumulative')
+
+plot_C
+
+@
+
+
+\end{document}
