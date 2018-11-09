@@ -1,0 +1,213 @@
+\documentclass{article}
+\usepackage{natbib}
+\usepackage[unicode=true]{hyperref}
+\usepackage{geometry}
+\usepackage{float}
+\usepackage{graphicx} % Allows including images
+\usepackage{booktabs} % Allows the use of \toprule, \midrule and \bottomrule in tables
+\usepackage{amsmath}% http://ctan.org/pkg/amsmath
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{verbatimbox}
+\usepackage{lmodern}
+\usepackage{multirow}
+\usepackage{bm}
+\usepackage{soul}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=,urlcolor=blue}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{tikz}
+\geometry{tmargin=1in,bmargin=1in,lmargin=1in,rmargin=1in}
+
+\begin{document}
+
+
+\title{Lab 4}
+\author{3033122445, 3033122406, 26929549}
+\date{November 9, 2018}
+
+\maketitle
+
+\section{Introduction}
+
+Clouds play an essential role in modulating the sensitivity of the polar regions to increasing surface air temperatures. However, due to the presence of snow and ice, cloud detection remains a vital yet challenging part of Arctic/global climate modeling. With novel radiation recordings from NASA Terra satellite and state-of-the-art classification methods, this report seeks to provide a working solution to the cloud detection problem.\\
+
+\section{Data}
+
+The radiance measurements used in this project were collected by Multiangle Imaging Spectro Radiometer(MISR), which was placed on board the NASA Terra satellite in 1999. The MISR sensor comprises nine cameras, with each camera viewing Earth at a different angle. The nine view zenith angles are 70.5(Df), 60.0(Cf), 45.6(Bf) and 26.1(Af) in the forward direction; 0.0(An) in the nadir direction and 26.1(Aa), 45.6(Ba), 60.0(Ca) and 70.5(Da) in the aft direction. MISR cameras cover an approximate 360-km-wide swath on the Earth's surface that extends across the daylight side from the Arctic down to Antarctica in about 45 minutes. They collect data from all swaths ion a repeat cycle of 16 days with each pixel covers a 275m $\times$ 275m region on the ground, resulting in a huge amount of data over the whole globe.\\
+
+The data also include three additional features, which are engineered by Shi \& Tao et al.(2008) after substantial exploratory data analysis: the correlation of MISR images of the same scene from different MISR viewing directions (\texttt{CORR}) that characterizes the scattering properties of ice- and snow-covered surfaces, the standard deviation (\texttt{SD}) of MISR nadir camera pixel values across a scene and a normalized difference angular index (\texttt{NDAI}) that characterizes the changes in a scene with changes in the MISR view direction.\\
+
+This project uses radiances and additional features of three MISR images to train and validate the cloud detection classification model.\\
+
+\section{Exploratory Data Analysis}
+
+\subsection{Expert Labels for the Presence or Absence of Clouds}
+Figure \ref{map_label} shows the expert classification of the three images. We will treat these labels as the true values to train and test the classification models.
+\begin{figure}[!htb]
+  \minipage{\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{map_label.pdf}
+    \caption{Images with Expert Classification}
+    \label{map_label}
+  \endminipage
+\end{figure}
+
+\subsection{Explore the Features}
+
+Next, we explore the relationships among the features. In Figure \ref{plot_cor}, we plot the correlation matrix of the true labels, radiances and additional features. As can be seen, the three engineered features are all negatively correlated with the true label while the radiances are all positively correlated. \texttt{NDAI}'s association with the expert labels is particularly strong, followed by \texttt{CORR}, \texttt{AF}, \texttt{AN} and \texttt{SD}. The correlation matrix gives us a good intuition for covariate selection, which will be detailed in the next section.\\ 
+
+The radiances of different angles are highly correlated, with most of the correlation coefficients in the range of 0.8 ~ 0.9. This suggests that variable selection would be necessary before we train models, as linear and generalized linear models such as logistic regression model perform poorly with highly-correlated features.\\
+
+\begin{figure}[!htb]
+  \minipage{\textwidth}
+    \centering
+    \includegraphics[width=0.8\linewidth]{plot_cor.pdf}
+    \caption{Correlation between expert labels and covariates}
+    \label{plot_cor}
+  \endminipage
+\end{figure}
+
+Lastly, we create the density plots of all covariates by the expert label in Figure \ref{plot_density}, in order to check how the radiances and engineered features behave in the presence or absence of cloud. In line with the correlation plot, \texttt{NDAI} does the best job in separating cloudy region from the clear part, as the great majority of $\texttt{NDAI} > 1$ pixels indicate absence of cloud. The distributions of CORR and SD are not as indicative. While pixels with larger values across covariates are more likely to be labeled clear, in the lower ranges, the two labels mostly overlap, making it hard to separate one from another. The radiances of different angles share similar pattern. While the cloudy regions clearly have higher radiances, due to snow and ice-coverage, the radiance of clear regions spans the entire range. The large overlapping area makes it challenging to detect cloud coverage. \\
+
+\begin{figure}[!htb]
+  \minipage{\textwidth}
+    \centering
+    \includegraphics[width=0.8\linewidth]{plot_density.pdf}
+    \caption{Density plots of all covariates}
+    \label{plot_density}
+  \endminipage
+\end{figure}
+
+
+\section{Modeling}
+
+\subsection{Feature Selection}
+
+From the density plots of the covariates in Figure \ref{plot_density}, \texttt{NDAI} appears to be the best able to separate points where there are clouds from those that are clear.  This distinguishing feature can also be seen in \texttt{CORR}.  The radiance values and \texttt{SD} mostly have overlapping densities between cloud and non-cloud labels, and it was thus difficult to visually select another covariate. Therefore, in preparation for the ensuing modeling, we utilized a more quantitative approach to select the most predictive features.\\
+
+Lasso with cross-validation was employed here for variable selection and we set the loss function to be the Area Under Curve (AUC). As Figure \ref{cv_glmnet} shows, AUC increases as $\lambda$ approaches 0 and more features are included in the model (the sequence of numbers on top of the chart indicates the number of nonzero coefficients of the corresponding point). The AUC gradually stabilizes as number of selected features moves beyond 4. Thus, four features would be ideal if we want to get relatively accurate prediction results with minimum number of features.\\
+
+Taking a closer look at the \texttt{glmnet} results, we see that the four best predictors selected by Lasso is \texttt{NDAI}, \texttt{CORR}, \texttt{DF} and \texttt{SD}. Comparing with their density plots in Figure \ref{cv_glmnet}, the order of the features' predictive power agrees with how well they are able to separate cloud regions from non-cloud.\\
+
+\begin{figure}[!htb]
+  \minipage{\textwidth}
+    \centering
+    \includegraphics[width=0.8\linewidth]{cv_glmnet.pdf}
+    \caption{LASSO: Number of non-zero coefficients, lambda and corresponding AUC}
+    \label{cv_glmnet}
+  \endminipage
+\end{figure}
+
+\subsection{Training the classifier}
+As seen in Figure \ref{map_label}, Image 1 and 2 contains a large amount of either cloudy (green) or clear (light blue) data points which we can use to train our classifier.  In contrast, Image 3 has a substantial proportion of unlabeled points (dark blue) which would not useful in the learning process.  As such, we kept Image 3 as a holdout set to test potential candidate classifiers after they have been tuned.  While we could have used a portion of Image 3 to train our classifier, we decided it would be more kosher if we kept the entire image out since there could be hidden correlations among the different variables within the same image.\\
+
+In order to train our classifiers, we needed to first tune their hyper-parameters.  We selected 3 base classifiers known to be computationally efficient while not sacrificing accuracy, viz. LASSO (from \texttt{glmnet}), XGBoost (from \texttt{xgboost}), and Random Forest (from \texttt{ranger} - which is supposed to be a faster implementation of \texttt{randomForest}).  For both LASSO and XGboost, we needed to tune the penalization parameter, whereas for Random Forest, we tuned the number of variables to possibly split at each node.  We tuned these parameters via 5-fold cross-validation where the learning data comprising of Images 1 and 2 were split into 5 folds.  At each iteration, all our candidate classifiers were trained on 4 of the folds, and the prediction error on the remaining fold was evaluated and the averaged across all 5 iterations.  The optimum value of the tuning parameter for each family of classifiers was then chosen based on the lowest average risk.\\
+
+There were some specifics with regards to the cross-validation process which we had to contend with.  We implemented the procedure by making use of the \texttt{SuperLearner} package usually used for ensemble learning.
+\begin{itemize}
+\item (Loss function) The optimal tuning parameters for each family of classifiers were chosen to be the one with minimal risk among those we considered.  We chose to minimize the rank loss function using the Nelder-Mead method which has been shown to be equivalent to maximizing the AUC.  This was specified using the \texttt{method} option in \texttt{SuperLearner}.
+\item (Spatial data) As the data we had was spatial in nature, points in some neighborhood of each other can be thought to be more related to each other.  This violates the iid assumption if we formed the folds not acknowledging this relationship.  As such, we split both Images 1 and 2 into 10 equally spaced columns and rows for a total of 100 cells.  Then, we formed folds of for our cross-validation by ensuring that all observations in the same cell were in the same fold.  This was specified using the \texttt{id} option in \texttt{SuperLearner}.
+\item (Tuning parameters) For the shrinkage parameter for \texttt{xgboost}, we chose to optimize over the values 0.1, 0.2 and 0.3.  For the number potential variables to split at each node, we chose to optimize over the values 1, 2 and 3.  Other than \texttt{cv.glmnet} which has its own cross-validation procedure built in to tune the penalty term, we had to specify variants of each of the other two classifiers based on the list of tuning parameters we specified above.
+\item (Parallel computing) As the dataset is large and the classifiers computationally expensive, we chose to parallelize our model using \texttt{snow}.
+\item (Superlearning) Although \texttt{SuperLearner} was built for ensemble learning, the eventual ensemble classifier performed just as well as our final classifier and hence, we chose not to present findings related to that.
+\end{itemize}
+
+We present the the average risk for the classfiers we considered in Table \ref{ave_risk} below.  Note that we only present the optimal \texttt{glmnet} classfier as \texttt{cv.glmnet} by default searches over a grid of 100 values.  It is clear from the cross-validated risk that with each family, we should be choosing \texttt{glmnet} with $\texttt{lambda} = 0.0007$, \texttt{xgboost} with $\texttt{shrinkage} = 0.1$, and \texttt{ranger} with $\texttt{mtry} = 1$.
+\begin{table}[htbp]
+\centering 
+\caption{Average rank-loss risk for classfiers} 
+\label{ave_risk}
+\begin{tabular}{l*{2}{cc}} 
+\hline\hline
+\textbf{classifier} &\textbf{tuning parameter}  &\textbf{rank-loss risk}\\
+\hline\hline
+\texttt{glmnet}     &$0.0007$                        &$0.037239$\\
+\hline
+\texttt{xgboost}    &$0.1$                      &$0.011678$\\
+\texttt{xgboost}    &$0.2$                      &$0.011965$\\
+\texttt{xgboost}    &$0.3$                      &$0.012211$\\
+\hline
+\texttt{ranger}     &$1$                        &$0.011725$\\
+\texttt{ranger}     &$2$                        &$0.012099$\\
+\texttt{ranger}     &$3$                        &$0.012502$\\
+\hline\hline
+\end{tabular}
+\end{table}
+
+\subsection{Choosing the threshold}
+When each classifier is applied to a set of data, it returns as output a set of predicted probabilities that the observation should be classified as cloudy.  In order to determine the actual class, we need a threshold for the predicted probabilities above which we classify the observation as cloudy and below which we classify the observation as clear.  To determine these threshold, we fit each of the tuned classifiers to the entire learning set (i.e., both Images 1 and 2 in their entirety) and computed the threshold that would maximize the True Positive Rate of classification whilst keeping the False Positive Rate below 0.05.  As seen from Figure \ref{ROC}, at a maximum False Positive Rate of 0.05, both \texttt{glmnet} and \texttt{xgboost} have a True Positive Rate of 0.964 and 0.959 with thresholds of 0.446 and 0.466 respectively.  \texttt{glmnet} achieves only a False Positive Rate of 0.796 at a threshold of 0.733.\\
+
+\begin{figure}[!htb]
+  \centering
+  \minipage{0.5\textwidth}
+    \includegraphics[width=\linewidth]{cv_ROC.pdf}
+  \endminipage
+  \minipage{0.5\textwidth}
+    \includegraphics[width=\linewidth]{cv_ROC_zoom.pdf}
+  \endminipage
+  \caption{Receiver operating characteristic curves for each tuned classifier.}
+  \label{ROC}
+\end{figure}
+
+\subsection{Testing classifiers on holdout set}
+We then tested our three classifiers on the holdout set as a fair assessment of its performance.  Visually, from Figure \ref{visual}, as we compare the expertly labeled points on Image 3 to that produced by our three tuned classifiers, we see that \texttt{xgboost} performed the best with an accuracy of 70.5\% (ignoring the regions that were unclassified by the experts).  This is followed surprisingly by \texttt{glmnet} with an accuracy of 69.5\%.  Lastly, \texttt{ranger} achieved only an accuracy of 46.53\% (with 95\% confidence interval from 46.12\% to 46.95\%) due to mis-classifying a huge number of points for $x >300$ and $y \in (75, 275)$.\\
+
+\begin{figure}[!htb]
+  \centering
+  \minipage{0.5\textwidth}
+    \includegraphics[width=\linewidth]{i3_label_pred3.pdf}
+     \includegraphics[width=\linewidth]{i3_xgboost_pred3.pdf}
+  \endminipage
+  \minipage{0.5\textwidth}
+    \includegraphics[width=\linewidth]{i3_glmnet_pred3.pdf}
+     \includegraphics[width=\linewidth]{i3_ranger_pred3.pdf}
+  \endminipage
+  \caption{Comparison of expert labels versus classifier predicted labels.}
+  \label{visual}
+\end{figure}
+
+Our final selected classifier, \texttt{xgboost}, performed the best among all three classifiers in terms of accuracy. We provide the confusion matrix for \texttt{xgboost} in Table \ref{Confusion}.  The \texttt{xgboost} classifier also had a sensitivity value of 80.76\% and specificity value of  59.46\%. The Sensitivity-Specificity curve as well as the Precision-Recall curve are provided in Figure \ref{xgboostsensspec}.\\
+\begin{table}[htbp]
+\centering 
+\caption{Confusion matrix for xgboost} 
+\label{Confusion}
+\begin{tabular}{l*{2}{cc}} 
+\hline\hline
+\textbf{} &\textbf{Predicted -1}  &\textbf{Predicted 1}\\
+\hline
+\texttt{Actual -1}     &$23006$         &$10746$\\
+\hline
+\texttt{Actual 1}      &$5481$          &$15763$\\
+\hline
+\end{tabular}
+\end{table}
+
+\begin{figure}[!htb]
+  \centering
+  \minipage{0.5\textwidth}
+    \includegraphics[width=\linewidth]{xgboostsensspec.pdf}
+  \endminipage
+  \minipage{0.5\textwidth}
+    \includegraphics[width=\linewidth]{xgboostprerec.pdf}
+  \endminipage
+    \caption{Sens-spec curve and precision-recall curve for xgboosting}
+  \label{xgboostsensspec}
+\end{figure}
+
+\newpage
+\subsection{Comparison among all classifiers}
+We want to delve a little deeper into the region in the bottom right corner ($x > 300$ and $y < 75$) of Image 3 where the expert label indicates that there were no clouds, whereas our classifiers tended to label almost all points in the region as cloudy.  To do so, we plotted the density curves for each covariate for that region in the holdout set (Image 3) in Figure \ref{plotdensityforsubset} together with the density curves for the learning set. It appears hard to obtain high accuracy for the data subset ($x > 300$ and $y < 75$) as covariate values in this region span across values in the learning set data with labels for both clear and cloudy data points.  In particular, if we look at the NDAI densities, we see that the mass of NDAI is centered around 1.7 in the test data subset and labeled as clear, whereas in our learning sets (Images 1 and 2), the density for clear points was centered much further to the left while the density for cloudy points was centered around 2.  This is indicates that our classfiers may not be sensitive enough to separate cloudy and clear regions in areas like this.  Especially for the portion with x-axis larger than 300, \texttt{lasso} and \texttt{xgboost} are doing a much better job than \texttt{ranger} but still fall short when $y<75$.  This leads us to question whether there are other potentially similar regions that could exist in other images and whether our classifier would perform similarly poorly there.\\
+
+\begin{figure}[!htb]
+  \minipage{\textwidth}
+    \centering
+    \includegraphics[width=0.8\linewidth]{plot_density_rc.pdf}
+    \caption{Density plots of all covariates on data subset}
+    \label{plotdensityforsubset}
+  \endminipage
+\end{figure}
+
+
+\end{document}
