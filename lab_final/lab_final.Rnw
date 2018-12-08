@@ -1,0 +1,552 @@
+\documentclass{article}
+
+\usepackage{geometry}
+\geometry{verbose,tmargin=1in,bmargin=1in,lmargin=1in,rmargin=1in}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\setlength{\parskip}{\smallskipamount}
+\setlength{\parindent}{0pt}
+\usepackage{amsthm}
+\usepackage{amsmath}
+
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+
+\title{Final Project\\
+Stat 215A, Fall 2018}
+
+\author{Mengling Liu}
+
+\maketitle
+
+<<setup, echo = FALSE, message=FALSE, warning=FALSE, eval=FALSE>>=
+# load in useful packages
+library(lattice)
+#install.packages(c("caTools", "ROCR"))
+library(dplyr)
+library(ggplot2)
+library(GGally)
+library(caTools)
+library(ROCR)
+library(tidyverse)
+library(caret)
+library(glmnet)
+library(HDCI)
+install.packages("devtools")
+library(devtools)
+#install_github("gabrielrvsc/HDeconometrics")
+library(HDeconometrics)
+library(foreach)
+library(doParallel)
+library(gridExtra)
+@
+
+<<echo = FALSE, message = FALSE, warning = FALSE, fig = TRUE, eval=FALSE>>=
+# Read in data
+
+fMRIdata <- load('fMRIdata.RData')
+#fMRIdata # loc_dat, resp_dat, val_feat, fit_feat
+#loc_dat
+#resp_dat 
+#val_feat
+#fit_feat
+
+fit_stim<-read.csv("fit_stim.csv")
+real_mav<-read.csv("real_wav.csv")
+
+@
+
+\section{Data Partition}
+
+I splitted the data into three parts: a training set, a validation set, and a test set. The training set is used to fit the models, the validation set is used to estimate prediction error for model selection, the test set is used for assessment of the generalization error. A typical split is 50\% for training, 25\% each for validation and testing set. 
+
+<<echo = FALSE, message = FALSE, warning = FALSE, fig = TRUE, eval=FALSE>>=
+# Partition 50% of data as training set from resp_dat (y value) and fit_feat (x value)
+set.seed(1)
+split_1 <- sample.split(1:1750, SplitRatio = 0.5)
+fit_feat.train <- fit_feat[split_1,] # x.train
+resp_dat.train <- resp_dat[split_1,] # y.train
+resp_dat.train
+
+# Partition the validation set out from the remaining data 
+split_2 <- sample.split((1:1750)[!split_1], SplitRatio = 0.5)
+
+# Validation index 
+val_index <- (1:1750)[!split_1][split_2]
+fit_feat.val <- fit_feat[Val_index,] # x.val
+resp_dat.val <- resp_dat[Val_index,] # y.val
+
+# Partition the test set out from the remaining data 
+fit_feat.test <- fit_feat[-c(which(split_1), val_index), ] # x.val
+resp_dat.test <- resp_dat[-c(which(split_1), val_index), ] # y.val
+
+@
+
+\section{Model Selection}
+First, I fitted a LASSO regression model and used 5-fold CV, ESCV, AIC, AICc and BIC for selecting the smoothing parameter in Lasso. 
+Second, I fitted a Ridge regression model and used 5-fold CV, ESCV, AIC, AICc and BIC for selecting the smoothing parameter in Ridge as well. 
+
+Now we want to undestand the weakness and strength of each criteria selection method.
+
+1. Cross validation: The advantage of this method over repeated random sub-sampling is that all observations are used for both training and validation, and each observation is used for validation exactly once. Also the advantage of this method (over k-fold cross validation) is that the proportion of the training/validation split is not dependent on the number of iterations (folds). The disadvantage of this method is that some observations may never be selected in the validation subsample, whereas others may be selected more than once. In other words, validation subsets may overlap. 
+
+2. ESCV: ESCV finds a smaller and locally ES-optimal model smaller than the CV choice so that the it fits the data and also enjoys estimation stability property. We demonstrate that ESCV is an effective alternative to CV at a similar easily parallelizable computational cost. In particular, we compare the two approaches with respect to several performance measures when applied to the Lasso on both simulated and real data sets. For dependent predictors common in practice, our main finding is that, ESCV cuts down false positive rates often by a large margin, while sacrificing little of true positive rates. ESCV usually outperforms CV in terms of parameter estimation while giving similar performance as CV in terms of prediction. 
+
+3. AIC, BIC and AICc: AIC and BIC are appropriate for different tasks. In particular, BIC is argued to be appropriate for selecting the "true model" (i.e. the process that generated the data) from the set of candidate models, whereas AIC is not appropriate. To be specific, if the "true model" is in the set of candidates, then BIC will select the "true model" with probability 1, as n goes to infinity. The reason is that, for finite n, BIC can have a substantial risk of selecting a very bad model from the candidate set. This reason can arise even when n is much larger than k2. With AIC, the risk of selecting a very bad model is minimized.
+
+AICc has the advantage of tending to be more accurate than AIC (especially for small samples), but AICc also has the disadvantage of sometimes being much more difficult to compute than AIC. Note that if all the candidate models have the same k and the same formula for AICc, then AICc and AIC will give identical (relative) valuations; hence, there will be no disadvantage in using AIC, instead of AICc. 
+
+<<echo = FALSE, message = FALSE, warning = FALSE, fig = TRUE, eval = FALSE>>=
+
+## Fit a lasso model ##
+
+# 5-fold cross validation
+lambda_lasso <- 10^seq(-3, 3, length = 100)
+cross_val_lasso <- list()
+for (i in 1:20){
+cv <- cv.glmnet(fit_feat.train, resp_dat.train[,i], alpha = 1,
+                nfolds = 5, lambda = lambda)
+cross_val_lasso[[i]] <- cv
+}
+# cross_val_lasso[[1]]$lambda.min # lambda that corresponds to the best model
+# 0.07564633
+
+# ESCV
+es_cross_val_lasso <- list()
+for (i in 1:20){
+escv <- escv.glmnet(fit_feat.train, resp_dat.train[,i], alpha = 1,
+                nfolds = 5, lambda = lambda)
+es_cross_val_lasso[[i]] <- escv
+}
+# es_cross_val_lasso[[1]]$lambda.escv  # lambda that corresponds to the best model
+# 0.1
+
+# AIC
+aic_lasso <- list()
+for (i in 1:20){
+aic_result <- ic.glmnet(fit_feat.train, resp_dat.train[,i], crit = 'aic')
+aic_lasso[[i]] <- aic_result
+}
+# aic_lasso[[2]]$lambda  # lambda that corresponds to the best model
+# 0.003573215
+
+# BIC
+bic_lasso <- list()
+for (i in 1:20){
+bic_result <- ic.glmnet(fit_feat.train, resp_dat.train[,i], crit = 'bic')
+bic_lasso[[i]] <- bic_result
+}
+# bic_lasso[[1]]$lambda  # lambda that corresponds to the best model
+# 0.1601819
+
+# AICc
+aicc_lasso <- list()
+for (i in 1:20){
+aicc_result <- ic.glmnet(fit_feat.train, resp_dat.train[,i], crit = 'aicc')
+aicc_lasso[[i]] <- aicc_result
+}
+# aicc_lasso[[1]]$lambda  # lambda that corresponds to the best model
+# 0.003876607
+
+## Fit a ridge model ##
+
+# 5-fold cross validation
+lambda_ridge <- 10^seq(-3, 3, length = 100)
+cross_val_ridge <- list()
+for (i in 1:20){
+cv <- cv.glmnet(fit_feat.train, resp_dat.train[,i], alpha = 0,
+                nfolds = 5, lambda = lambda)
+cross_val_ridge[[i]] <- cv
+}
+# cross_val_ridge[[2]]$lambda.min # lambda that corresponds to the best model
+# 53.36699
+
+# ESCV
+es_cross_val_ridge <- list()
+for (i in 1:20){
+escv <- escv.glmnet(fit_feat.train, resp_dat.train[,i], alpha = 0,
+                nfolds = 5, lambda = lambda)
+es_cross_val_ridge[[i]] <- escv
+}
+# es_cross_val_ridge[[1]]$lambda.escv  # lambda that corresponds to the best model
+# 1000
+
+# AIC
+aic_ridge <- list()
+for (i in 1:20){
+aic_result <- ic.glmnet(fit_feat.train, resp_dat.train[,i], crit = 'aic')
+aic_ridge[[i]] <- aic_result
+}
+# aic_ridge[[1]]$lambda  # lambda that corresponds to the best model
+# 0.003072145
+
+# BIC
+bic_ridge <- list()
+for (i in 1:20){
+bic_result <- ic.glmnet(fit_feat.train, resp_dat.train[,i], crit = 'bic')
+bic_ridge[[i]] <- bic_result
+}
+# bic_ridge[[1]]$lambda  # lambda that corresponds to the best model
+# 0.1601819
+
+# AICc
+aicc_ridge <- list()
+for (i in 1:20){
+aicc_result <- ic.glmnet(fit_feat.train, resp_dat.train[,i], crit = 'aicc')
+aicc_ridge[[i]] <- aicc_result
+}
+# aicc_ridge[[1]]$lambda  # lambda that corresponds to the best model
+# 0.003876607
+
+@
+
+\section{Correlation Calculation}
+Calculate the correlation between fitted values and observed values based on the predictor for all 20 voxels.
+
+Correlation calculation for Lasso regression:
+<<echo = FALSE, message = FALSE, warning = FALSE>>=
+lasso_corr_table <- read.csv("lasso_corr.csv")
+lasso_corr_table
+@
+
+Correlation calculation for ridge regression:
+<<echo = FALSE, message = FALSE, warning = FALSE>>=
+ridge_corr_table <- read.csv("ridge_corr.csv")
+ridge_corr_table
+@
+
+<<echo = FALSE, message = FALSE, warning = FALSE, fig = TRUE, eval=FALSE>>=
+
+## LASSO model ##
+# 5-fold cv:
+y.val_pred_cv <- predict(cross_val_lasso, fit_feat.val)
+corr_lasso_cv<-c()
+for (i in 1:20){
+   corr_lasso_cv[i] <- cor(y.val_pred_cv[[i]], resp_dat.val[,i])
+}
+corr_lasso_cv 
+
+# escv:
+escv_lasso_model<-list()
+y.val_pred_cv_escv <- list()
+corr_lasso_escv<-c()
+for (i in 1:20){
+escv_lasso_model[[i]] <- glmnet(fit_feat.train, resp_dat.train[,i], alpha = 1, lambda = es_cross_val_lasso[[i]]$lambda.escv)
+y.val_pred_cv_escv[[i]] <- predict(escv_lasso_model[[i]], fit_feat.val)
+corr_lasso_escv[i] <- cor(y.val_pred_cv_escv[[i]], resp_dat.val[,i])
+}
+corr_lasso_escv
+
+# aic_lasso:
+y.val_pred_cv <- predict(aic_lasso, fit_feat.val)
+corr_lasso_aic<-c()
+for (i in 1:20){
+   corr_lasso_aic[i] <- cor(y.val_pred_cv[[i]], resp_dat.val[,i])
+}
+corr_lasso_aic 
+
+# bic_lasso:
+y.val_pred_cv <- predict(bic_lasso, fit_feat.val)
+corr_lasso_bic<-c()
+for (i in 1:20){
+   corr_lasso_bic[i] <- cor(y.val_pred_cv[[i]], resp_dat.val[,i])
+}
+corr_lasso_bic 
+
+# aicc_lasso:
+y.val_pred_cv <- predict(aicc_lasso, fit_feat.val)
+corr_lasso_aicc<-c()
+for (i in 1:20){
+   corr_lasso_aicc[i] <- cor(y.val_pred_cv[[i]], resp_dat.val[,i])
+}
+corr_lasso_aicc 
+
+## RIDGE model ##
+# 5-fold cv:
+y.val_pred_cv <- predict(cross_val_ridge, fit_feat.val)
+corr_ridge_cv<-c()
+for (i in 1:20){
+   corr_ridge_cv[i] <- cor(y.val_pred_cv[[i]], resp_dat.val[,i])
+}
+corr_ridge_cv 
+
+# escv:
+escv_ridge_model<-list()
+y.val_pred_cv_escv <- list()
+corr_ridge_escv<-c()
+for (i in 1:20){
+escv_ridge_model[[i]] <- glmnet(fit_feat.train, resp_dat.train[,i], alpha = 0, lambda = es_cross_val_ridge[[i]]$lambda.escv)
+y.val_pred_cv_escv[[i]] <- predict(escv_ridge_model[[i]], fit_feat.val)
+corr_ridge_escv[i] <- cor(y.val_pred_cv_escv[[i]], resp_dat.val[,i])
+}
+corr_ridge_escv
+
+# aic:
+y.val_pred_cv <- predict(aic_ridge, fit_feat.val)
+corr_ridge_aic<-c()
+for (i in 1:20){
+   corr_ridge_aic[i] <- cor(y.val_pred_cv[[i]], resp_dat.val[,i])
+}
+corr_ridge_aic 
+
+# bic:
+y.val_pred_cv <- predict(bic_ridge, fit_feat.val)
+corr_ridge_bic<-c()
+for (i in 1:20){
+   corr_ridge_bic[i] <- cor(y.val_pred_cv[[i]], resp_dat.val[,i])
+}
+corr_ridge_bic 
+
+# aicc:
+y.val_pred_cv <- predict(aicc_ridge, fit_feat.val)
+corr_ridge_aicc<-c()
+for (i in 1:20){
+   corr_ridge_aicc[i] <- cor(y.val_pred_cv[[i]], resp_dat.val[,i])
+}
+corr_ridge_aicc 
+
+# For lasso model
+lasso_corr <- cbind(corr_lasso_cv, corr_lasso_escv, corr_lasso_aic, corr_lasso_bic, corr_lasso_aicc)
+lasso_corr
+write.csv(lasso_corr, "lasso_corr.csv")
+
+# For ridge model
+ridge_corr <- cbind(corr_ridge_cv, corr_ridge_escv, corr_ridge_aic, corr_ridge_bic, corr_ridge_aicc)
+ridge_corr
+write.csv(ridge_corr, "ridge_corr.csv")
+
+@
+
+\section{Model Diagnostic}
+Now I chose a couple of models to further investigate the fit of models. Are there any outliers? Any further discussion on the stability of the prediction results and of the models?
+ 
+I chose voxel 2 as an example, so for voxel 2, I chose the model with the highest correlation value, which is the Lasso model with escv as a selection criteria. I also conducted similar analysis on ridge regression as well. Ridge model with cross validation as a selection criteria gave the highest correlation value.
+
+Firstly, I wanted to check on the outliers of both models I plotted the true value of y against the predicted value of y from both models. The observation is that most of the dots follow along the "y=x" line for both cases. 
+
+\includegraphics{outlier_plot.png}
+
+Secondly, I also plotted the distribution of absolute error for both ridge and lasso models. From both sets of graphs, we can conclude that both models generated relatively stable prediction results. The absolute errors are controlled within the range from 0 to 3.
+
+\includegraphics{error_plot.png}
+
+<<echo = FALSE, message = FALSE, warning = FALSE, fig = TRUE, eval= FALSE>>=
+# Lasso model with escv as a selection criteria
+escv_lasso_model_2 <- glmnet(fit_feat.train, resp_dat.train[,2], alpha = 1, lambda = es_cross_val_lasso[[2]]$lambda.escv)
+y.val_pred_lasso_escv <- predict(escv_lasso_model_2, fit_feat.val)
+
+# Plot of true value and predicted value for voxel 2
+outlier_lasso_plot <-ggplot() +
+  geom_point(aes(x=y.val_pred_lasso_escv, y=resp_dat.val[,2])) +
+  ggtitle("True vs. predicted value (lasso escv)") +
+  # theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="True value", y="Predicted value")
+ggsave("outlier_lasso_plot.png")
+
+# Distribution of absolute error for lasso model
+error_lasso <- abs(y.val_pred_lasso_escv - resp_dat.val[,2])
+error_lasso <- data.frame(error_lasso)
+error_lasso_plot<- ggplot(error_lasso) +
+  geom_histogram(aes(s0)) +
+  ggtitle("Distribution of absolute error (lasso escv)") +
+  # theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="Absolute error", y="Frequency")
+ggsave("error_lasso_plot.png")
+
+#-----------------------
+# Ridge model with cv as a selection criteria
+y.val_pred_ridge_cv <- predict(cross_val_ridge, fit_feat.val)
+
+# Plot of true value and predicted value for voxel 2
+outlier_ridge_plot<- ggplot() + 
+  geom_point(aes(x=y.val_pred_ridge_aic[[2]], y=resp_dat.val[,2])) +
+  ggtitle("True vs. predicted value (ridge cv)") +
+  labs(x="True value", y="Predicted value")
+ggsave("outlier_ridge_plot.png")
+
+# Distribution of absolute error for Lasso model
+error_ridge <- abs(y.val_pred_ridge_aic[[2]] - resp_dat.val[,2])
+error_ridge <- data.frame(error_ridge)
+error_ridge_plot<- ggplot(error_ridge) +
+  geom_histogram(aes(error_ridge)) +
+  ggtitle("Distribution of absolute error (ridge cv)") +
+  # theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="Absolute error", y="Frequency")
+ggsave("error_ridge_plot.png")
+
+outlier_plot<- grid.arrange(outlier_lasso_plot, outlier_ridge_plot)
+error_plot<- grid.arrange(error_lasso_plot, error_ridge_plot)
+
+
+@
+
+Now I wanted to deep dive into the features. Do the models share any features? Which predictors are important for which voxels? What features are stable across different bootstrap samples? What can be learned about how voxels respond to images? 
+
+In order to test the stability of the prediction results of the models, I want to adopt the bootstrap methodology. I first sample from the training data sets with replacement for 100 times, and then fit the lasso and ridge models. I then check the prediction results for each of the 100 models. Here for lasso model, I chose the one with the highest correlation value - escv criteria. For the ridge model, I also chose the model corresponding with the highest correlation value - cv criteria. 
+
+In order to undestand whether the lasso and ridge models are stable, I examined the distribution of correlation among all coefficients for all 100 models. I noticed that for both models, the correlations fall largely in the range around 0.45, indicating that the model is quite stable. 
+
+\includegraphics{plot_corr.png}
+
+In order to understand whether the models share any features and which predictors are important for which voxels. Lasso regression can perform variable selection. I extracted all the 10,921 coefficients for all the 100 models. I defined important predictors as the ones with high occurance of non-zero coefficients and here I used the threshold of 60\%: I counted the total number of coefficients with more than 60 models showing non-zero values. The final output shows the coefficients that fall above this threshold, and the corresponding number of times non-zero values occur for those coefficients. Under lasso regression model with escv as the selection criteria, we observe 3 important predictors: feature 5126 with 64 non-zero values, feature 5448 with 93 non-zero values and feature 5471 with 86 non-zero values.
+
+I also wanted to understand what features are stable across different bootstrap samples under lasso regression model, so I plotted the distribution of coefficients for important features selected using 60\% threshold. From the graph, we observed that the features are stable across different bootsrap samples as the variance of the distribution is relatively small and the plot is long-tail right-skewed distribution with majority of the data concentrated within a narrow range.
+
+\includegraphics{plot_coefficient.png}
+
+<<echo = FALSE, message = FALSE, warning = FALSE, fig = TRUE, eval=FALSE>>=
+# Bootstrap 100 times from the training data sets with replacement
+Nrows <- nrow(fit_feat.train)
+bootstrap <- replicate(100, sample(1:Nrows, Nrows, replace = T))
+bootstrap <- t(bootstrap)
+
+cores = detectCores()
+cl <- makeCluster(cores[1] - 1)
+registerDoParallel(cl)
+
+## Lasso Model ##
+# Now we want to fit a lasso model with highest correlation value - escv for 100 times 
+# es_cross_val_lasso[[2]]$lambda.escv  # lambda that corresponds to the best model (lambda = 0.1)
+coefficient_lasso <- foreach(i = 1: 100, .combine = cbind,.packages = c("glmnet", "tidyverse","foreach")) %dopar% {
+  # The lasso model with the highest correlation value is when lambda =  0.1
+  lasso_escv_model <- glmnet(fit_feat.train[bootstrap[i,],], resp_dat.train[bootstrap[i,],1], alpha = 1, lambda =  0.1)
+  # Find the coefficients for all the models
+  coefficient = lasso_escv_model$beta[1:ncol(fit_feat.train)]
+  # Find the predicted y on validation data set
+  y_prediction <- predict(lasso_escv_model, fit_feat.val)
+  # Calculate the correlation between the true value and predicted value
+  correlation <- cor(y_prediction, resp_dat.val[,1])
+  coefficient <- c(coefficient, correlation)
+  coefficient
+}
+
+# coefficient_lasso
+
+# Generate the coefficient of the fitted models
+coefficient_matrix_lasso <- coefficient_lasso[1:ncol(fit_feat.train),]
+# Generate the correlation between the true values and predicted ones for 100 models
+correlation_matrix_lasso <- coefficient_lasso[ncol(fit_feat.train)+1,]
+
+# Now want to understand whether the lasso model is stable:
+# Plot the distribution of coefficient correlations for 100 models
+correlation_matrix_lasso<-data.frame(correlation_matrix_lasso)
+colnames(correlation_matrix_lasso)<-"corr_lasso"
+plot_corr_lasso <- ggplot(correlation_matrix_lasso) +
+  geom_density(aes(corr_lasso)) +
+  ggtitle("Distribution of coefficient correlation for all 100 models (ridge cv)") +
+  # theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="Correlation", y="Density")
+ggsave("plot_corr_lasso.png")
+
+
+# Want to count how many times non-zero values occur for each coefficient
+coef_matrix_lasso_tf <- coefficient_matrix_lasso!=0
+rownames(coef_matrix_lasso_tf) <- paste0("Coef ", as.character(1:10921))
+sum_coef_matrix_lasso<-apply(coef_matrix_lasso_tf, MARGIN = 1, FUN = sum)
+# Total count of coefficients with more than 60 models showing non-zero values
+sum(sum_coef_matrix_lasso>=60)
+# The count of times non-zero values occur for the coefficients with more than 60 models showing non-zero values
+sum_coef_matrix_lasso[which(sum_coef_matrix_lasso>=60)]
+
+# Now want to understand whether features are stable across different bootstrap samples.
+# Distribution plot of coefficients for selected important features
+# Important feature 1: coef 5126
+coefficient_lasso_1 <- data.frame(coefficient_matrix_lasso[5126,])
+#dim(coefficient_1)
+colnames(coefficient_lasso_1) <- 'coef_1'
+coefficient_lasso_1
+
+plot_coefficient_lasso_1 <- ggplot(coefficient_1)+
+  geom_density(aes(coef_1)) +
+  ggtitle("Distribution plot of coefficients for feature 5126") +
+  # theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="Coefficients", y="Frequency")
+plot_coefficient_lasso_1
+
+# Important feature 2: coef 5448
+coefficient_lasso_2 <- data.frame(coefficient_matrix_lasso[5448,])
+#dim(coefficient_2)
+colnames(coefficient_lasso_2) <- 'coef_2'
+coefficient_lasso_2
+
+plot_coefficient_lasso_2 <- ggplot(coefficient_lasso_2)+
+  geom_density(aes(coef_2)) +
+  ggtitle("Distribution plot of coefficients for feature 5448") +
+  # theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="Coefficients", y="Frequency")
+plot_coefficient_lasso_2
+
+# Important feature 3: coef 5471
+coefficient_lasso_3 <- data.frame(coefficient_matrix_lasso[5471,])
+#dim(coefficient_3)
+colnames(coefficient_lasso_3) <- 'coef_3'
+coefficient_lasso_3
+
+plot_coefficient_lasso_3 <- ggplot(coefficient_lasso_3)+
+  geom_density(aes(coef_3)) +
+  ggtitle("Distribution plot of coefficients for feature 5471") +
+  # theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="Coefficients", y="Frequency")
+plot_coefficient_lasso_3
+
+plot_coefficient<-grid.arrange(plot_coefficient_lasso_1,plot_coefficient_lasso_2,plot_coefficient_lasso_3)
+plot_coefficient
+
+## Ridge Model ##
+# cross_val_ridge[[2]]$lambda.min: lambda that corresponds to the best model (lambda = 40.37017)
+
+# Now we want to fit a ridge model with highest correlation value - cv for 100 times 
+coefficient_ridge <- foreach(i = 1: 100, .combine = cbind,.packages = c("glmnet", "tidyverse","foreach")) %dopar% {
+  # The ridge model with the highest correlation value is when lambda =  40.37017
+  ridge_cv_model <- glmnet(fit_feat.train[bootstrap[i,],], resp_dat.train[bootstrap[i,],1], alpha = 0, lambda =  40.37017)
+  # Find the coefficients for all the models
+  coefficient = ridge_cv_model$beta[1:ncol(fit_feat.train)]
+  # Find the predicted y on validation data set
+  y_prediction <- predict(ridge_cv_model, fit_feat.val)
+  # Calculate the correlation between the true value and predicted value
+  correlation <- cor(y_prediction, resp_dat.val[,1])
+  coefficient <- c(coefficient, correlation)
+  coefficient
+}
+
+# coefficient_ridge
+
+# Generate the coefficient of the fitted models
+coefficient_matrix_ridge <- coefficient_ridge[1:ncol(fit_feat.train),]
+# Generate the correlation between the true values and predicted ones for 100 models
+correlation_matrix_ridge <- coefficient_ridge[ncol(fit_feat.train)+1,]
+
+# Now want to understand whether the lasso model is stable:
+# Plot the distribution of correlations for 100 models
+correlation_matrix_ridge<-data.frame(correlation_matrix_ridge)
+colnames(correlation_matrix_ridge)<-"corr_ridge"
+plot_corr_ridge <- ggplot(correlation_matrix_ridge)+
+  geom_density(aes(corr_ridge)) +
+  ggtitle("Distribution of coefficient correlation for all 100 models (ridge cv)") +
+  # theme(plot.title = element_text(hjust = 0.5, color = "#666666", face = "bold", size = 10)) +
+  labs(x="Correlation", y="Density")
+plot_corr_ridge
+
+# Plot the distribution of coefficient correlations for all models
+plot_corr <- grid.arrange(plot_corr_lasso,plot_corr_ridge)
+plot_corr
+
+@
+
+What can be learned about how voxels respond to images? We can conclude from above analysis that different features contribute to how voxels respond to images with different weights. 
+
+\section{Model Fitting}
+I used my best lasso model to predict the response of the first voxel on the 120 images.
+I chose lasso model with escv as a seleciton criteria as it outputs the highest correlation among all the methods for lasso regression.
+<<echo = FALSE, message = FALSE, warning = FALSE, fig = TRUE, eval=FALSE>>=
+#lasso_corr
+
+y.val_pred_cv_escv_1 <- predict(escv_lasso_model[[1]], val_feat)
+y.val_pred_cv_escv_1
+write.table(y.val_pred_cv_escv_1, file =  "predv1_menglingliu.txt", sep = "\n", 
+            row.names = F, col.names = F)
+
+@
+
+\end{document}
