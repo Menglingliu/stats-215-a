@@ -1,4 +1,11 @@
-# Repository for submitting labs for STAT 215A Fall 2017
+# Stat 215a: Applied Statistics and Machine Learning
+
+UC Berkeley
+
+Applied statistics and machine learning, focusing on answering scientific questions using data, the data science life cycle, critical thinking, reasoning, methodology, and trustworthy and reproducible computational practice. Hands-on-experience in open-ended data labs, using programming languages such as R and Python. Emphasis on understanding and examining the assumptions behind standard statistical models and methods and the match between the assumptions and the scientific question. Exploratory data analysis. Model formulation, fitting, model testing and validation, interpretation, and communication of results. Methods, including linear regression and generalizations, decision trees, random forests, simulation, and randomization methods.
+
+
+## Repository for submitting labs for STAT 215A Fall 2017
 
 This repository contains a set file structure for submitting the projects.
 
